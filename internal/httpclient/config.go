@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"time"
 
+	"github.com/benthosdev/benthos/v4/public/bloblang"
 	"github.com/benthosdev/benthos/v4/public/service"
 )
 
@@ -11,6 +12,7 @@ const (
 	hcFieldURL                 = "url"
 	hcFieldVerb                = "verb"
 	hcFieldHeaders             = "headers"
+	hcFieldHeadersBlobl        = "headers_blobl"
 	hcFieldMetadata            = "metadata"
 	hcFieldExtractHeaders      = "extract_headers"
 	hcFieldRateLimit           = "rate_limit"
@@ -32,7 +34,7 @@ func ConfigField(defaultVerb string, forOutput bool, extraChildren ...*service.C
 	innerFields := []*service.ConfigField{
 		service.NewInterpolatedStringField(hcFieldURL).
 			Description("The URL to connect to."),
-		service.NewStringField(hcFieldVerb).
+		service.NewInterpolatedStringField(hcFieldVerb).
 			Description("A verb to connect with").
 			Examples("POST", "GET", "DELETE").
 			Default(defaultVerb),
@@ -43,6 +45,12 @@ func ConfigField(defaultVerb string, forOutput bool, extraChildren ...*service.C
 				"traceparent":  `${! tracing_span().traceparent }`,
 			}).
 			Default(map[string]any{}),
+		service.NewBloblangField(hcFieldHeadersBlobl).
+			Description("A bloblang with the headers to add to the request.").
+			Example("root.Authorization = \"this.Authorization\"\nroot.Content-Type = \"application/json\"").
+			Optional().
+			Default("").
+			Secret(),
 		service.NewMetadataFilterField(hcFieldMetadata).
 			Description("Specify optional matching rules to determine which metadata keys should be added to the HTTP request as headers.").
 			Advanced().
@@ -112,10 +120,13 @@ func ConfigFromParsed(pConf *service.ParsedConfig) (conf OldConfig, err error) {
 	if conf.URL, err = pConf.FieldInterpolatedString(hcFieldURL); err != nil {
 		return
 	}
-	if conf.Verb, err = pConf.FieldString(hcFieldVerb); err != nil {
+	if conf.Verb, err = pConf.FieldInterpolatedString(hcFieldVerb); err != nil {
 		return
 	}
 	if conf.Headers, err = pConf.FieldInterpolatedStringMap(hcFieldHeaders); err != nil {
+		return
+	}
+	if conf.HeadersBlobl, err = pConf.FieldBloblang(hcFieldHeadersBlobl); err != nil {
 		return
 	}
 	if conf.Metadata, err = pConf.FieldMetadataFilter(hcFieldMetadata); err != nil {
@@ -163,8 +174,9 @@ func ConfigFromParsed(pConf *service.ParsedConfig) (conf OldConfig, err error) {
 // OldConfig is a configuration struct for an HTTP client.
 type OldConfig struct {
 	URL                 *service.InterpolatedString
-	Verb                string
+	Verb                *service.InterpolatedString
 	Headers             map[string]*service.InterpolatedString
+	HeadersBlobl        *bloblang.Executor
 	Metadata            *service.MetadataFilter
 	ExtractMetadata     *service.MetadataFilter
 	RateLimit           string

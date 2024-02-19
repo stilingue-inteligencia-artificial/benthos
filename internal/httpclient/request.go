@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/benthosdev/benthos/v4/public/bloblang"
 	"github.com/benthosdev/benthos/v4/public/service"
 )
 
@@ -36,8 +37,9 @@ type RequestCreator struct {
 
 	url              *service.InterpolatedString
 	host             *service.InterpolatedString
-	verb             string
+	verb             *service.InterpolatedString
 	headers          map[string]*service.InterpolatedString
+	headersBlobl     *bloblang.Executor
 	metaInsertFilter *service.MetadataFilter
 }
 
@@ -54,6 +56,7 @@ func RequestCreatorFromOldConfig(conf OldConfig, mgr *service.Resources, opts ..
 		reqSigner:        conf.Auth.Sign,
 		verb:             conf.Verb,
 		headers:          conf.Headers,
+		headersBlobl:     conf.HeadersBlobl,
 		metaInsertFilter: conf.Metadata,
 	}
 	for _, opt := range opts {
@@ -224,7 +227,12 @@ func (r *RequestCreator) Create(refBatch service.MessageBatch) (req *http.Reques
 		err = fmt.Errorf("url interpolation error: %w", err)
 		return
 	}
-	if req, err = http.NewRequest(r.verb, urlStr, body); err != nil {
+	var verbStr string
+	if verbStr, err = refBatch.TryInterpolatedString(0, r.verb); err != nil {
+		err = fmt.Errorf("verb interpolation error: %w", err)
+		return
+	}
+	if req, err = http.NewRequest(verbStr, urlStr, body); err != nil {
 		return
 	}
 
@@ -236,6 +244,24 @@ func (r *RequestCreator) Create(refBatch service.MessageBatch) (req *http.Reques
 		}
 		req.Header.Add(k, hStr)
 	}
+
+	if r.headersBlobl != nil {
+		var headers any
+		var msg any
+		msg, err = refBatch[0].AsStructured()
+		if err != nil {
+			err = fmt.Errorf("error getting message as structured: %w", err)
+			return
+		}
+		if headers, err = r.headersBlobl.Query(msg); err != nil {
+			err = fmt.Errorf("headers bloblang query error: %w", err)
+			return
+		}
+		for k, v := range headers.(map[string]string) {
+			req.Header.Add(k, v)
+		}
+	}
+
 	if len(refBatch) > 0 {
 		_ = r.metaInsertFilter.WalkMut(refBatch[0], func(k string, v any) error {
 			req.Header.Add(k, value.IToString(v))

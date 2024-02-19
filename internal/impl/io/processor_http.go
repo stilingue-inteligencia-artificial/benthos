@@ -72,11 +72,12 @@ func init() {
 }
 
 type httpProc struct {
-	client      *httpclient.Client
 	asMultipart bool
 	parallel    bool
 	rawURL      string
 	log         *service.Logger
+	conf        httpclient.OldConfig
+	mgr         *service.Resources
 }
 
 func newHTTPProcFromParsed(conf *service.ParsedConfig, mgr *service.Resources) (*httpProc, error) {
@@ -103,18 +104,27 @@ func newHTTPProcFromParsed(conf *service.ParsedConfig, mgr *service.Resources) (
 		asMultipart: asMultipart,
 		parallel:    parallel,
 	}
-	if g.client, err = httpclient.NewClientFromOldConfig(oldConf, mgr); err != nil {
-		return nil, err
-	}
+	g.conf = oldConf
+	g.mgr = mgr
 	return g, nil
 }
 
 func (h *httpProc) ProcessBatch(ctx context.Context, msg service.MessageBatch) ([]service.MessageBatch, error) {
+	var client *httpclient.Client
+	var err error
+
+	h.conf.Auth.BasicAuth.Enabled = true
+
+	if client, err = httpclient.NewClientFromOldConfig(h.conf, h.mgr); err != nil {
+		return nil, err
+	}
+	defer client.Close(context.Background())
+
 	var responseMsg service.MessageBatch
 
 	if h.asMultipart || len(msg) == 1 {
 		// Easy, just do a single request.
-		resultMsg, err := h.client.Send(context.Background(), msg)
+		resultMsg, err := client.Send(context.Background(), msg)
 		if err != nil {
 			var code int
 			var hErr component.ErrUnexpectedHTTPRes
@@ -152,7 +162,7 @@ func (h *httpProc) ProcessBatch(ctx context.Context, msg service.MessageBatch) (
 	} else if !h.parallel {
 		for _, p := range msg {
 			tmpMsg := service.MessageBatch{p}
-			result, err := h.client.Send(context.Background(), tmpMsg)
+			result, err := client.Send(context.Background(), tmpMsg)
 			if err != nil {
 				h.log.Errorf("HTTP request to '%v' failed: %v", h.rawURL, err)
 
@@ -191,7 +201,7 @@ func (h *httpProc) ProcessBatch(ctx context.Context, msg service.MessageBatch) (
 			go func() {
 				for index := range reqChan {
 					tmpMsg := service.MessageBatch{msg[index]}
-					result, err := h.client.Send(context.Background(), tmpMsg)
+					result, err := client.Send(context.Background(), tmpMsg)
 					if err == nil && len(result) != 1 {
 						err = fmt.Errorf("unexpected response size: %v", len(result))
 					}
@@ -235,5 +245,5 @@ func (h *httpProc) ProcessBatch(ctx context.Context, msg service.MessageBatch) (
 }
 
 func (h *httpProc) Close(ctx context.Context) error {
-	return h.client.Close(ctx)
+	return nil
 }

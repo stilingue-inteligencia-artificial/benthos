@@ -74,15 +74,15 @@ const (
 // BasicAuthField returns a config field spec for basic authentication.
 func BasicAuthField() *service.ConfigField {
 	return service.NewObjectField(aFieldBasicAuth,
-		service.NewBoolField(abFieldEnabled).
+		service.NewInterpolatedStringField(abFieldEnabled).
 			Description("Whether to use basic authentication in requests.").
-			Default(false),
+			Default("false"),
 
-		service.NewStringField(abFieldUsername).
+		service.NewInterpolatedStringField(abFieldUsername).
 			Description("A username to authenticate as.").
 			Default(""),
 
-		service.NewStringField(abFieldPassword).
+		service.NewInterpolatedStringField(abFieldPassword).
 			Description("A password to authenticate with.").
 			Default("").Secret(),
 	).Description("Allows you to specify basic authentication.").
