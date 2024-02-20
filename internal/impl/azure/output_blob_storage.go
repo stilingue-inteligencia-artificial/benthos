@@ -150,16 +150,15 @@ func (a *azureBlobStorageWriter) Connect(ctx context.Context) error {
 }
 
 func (a *azureBlobStorageWriter) uploadBlob(ctx context.Context, containerName, blobName, blobType string, msg *service.Message) error {
+	uploadBody, err := a.getUploadBody(msg)
+	if err != nil {
+		return err
+	}
+
 	containerClient := a.conf.client.ServiceClient().NewContainerClient(containerName)
-
 	if blobType == "APPEND" {
-		mBytes, err := msg.AsBytes()
-		if err != nil {
-			return err
-		}
-
 		appendBlobClient := containerClient.NewAppendBlobClient(blobName)
-		_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(bytes.NewReader(mBytes)), nil)
+		_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(uploadBody), nil)
 		if err != nil {
 			if isErrorCode(err, bloberror.BlobNotFound) {
 				_, err := appendBlobClient.Create(ctx, nil)
@@ -168,7 +167,7 @@ func (a *azureBlobStorageWriter) uploadBlob(ctx context.Context, containerName, 
 				}
 
 				// Try to upload the message again now that we created the blob
-				_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(bytes.NewReader(mBytes)), nil)
+				_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(uploadBody), nil)
 				if err != nil {
 					return fmt.Errorf("failed retrying to append block to blob: %w", err)
 				}
@@ -177,11 +176,6 @@ func (a *azureBlobStorageWriter) uploadBlob(ctx context.Context, containerName, 
 			}
 		}
 	} else {
-		uploadBody, err := a.getBlockUploadBody(msg)
-		if err != nil {
-			return err
-		}
-
 		_, err = containerClient.NewBlockBlobClient(blobName).UploadStream(ctx, uploadBody, nil)
 		if err != nil {
 			return fmt.Errorf("failed to push block to blob: %w", err)
@@ -243,17 +237,27 @@ func (a *azureBlobStorageWriter) Write(ctx context.Context, msg *service.Message
 	return nil
 }
 
-func (a *azureBlobStorageWriter) getBlockUploadBody(m *service.Message) (io.Reader, error) {
+func (a *azureBlobStorageWriter) getUploadBody(m *service.Message) (io.ReadSeeker, error) {
 	localFilePath, err := a.conf.LocalFilePath.TryString(m)
 	if err != nil {
 		return nil, fmt.Errorf("local file path interpolation error: %w", err)
 	}
 
-	file, err := os.Open(localFilePath)
-	if err != nil {
-		return nil, fmt.Errorf("local file read error: %w", err)
+	if localFilePath == "" {
+		file, err := os.Open(localFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("local file read error: %w", err)
+		}
+
+		return file, nil
 	}
-	return file, nil
+
+	mBytes, err := m.AsBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	return bytes.NewReader(mBytes), nil
 }
 
 func (a *azureBlobStorageWriter) Close(context.Context) error {
