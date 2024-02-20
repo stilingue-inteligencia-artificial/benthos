@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/streaming"
@@ -19,6 +21,7 @@ const (
 	// Blob Storage Output Fields
 	bsoFieldContainer         = "container"
 	bsoFieldPath              = "path"
+	bsoFieldLocalFilePath     = "local_file_path"
 	bsoFieldBlobType          = "blob_type"
 	bsoFieldPublicAccessLevel = "public_access_level"
 )
@@ -27,6 +30,7 @@ type bsoConfig struct {
 	client            *azblob.Client
 	Container         *service.InterpolatedString
 	Path              *service.InterpolatedString
+	LocalFilePath     *service.InterpolatedString
 	BlobType          *service.InterpolatedString
 	PublicAccessLevel *service.InterpolatedString
 }
@@ -48,6 +52,9 @@ func bsoConfigFromParsed(pConf *service.ParsedConfig) (conf bsoConfig, err error
 		conf.Container, _ = service.NewInterpolatedString("")
 	}
 	if conf.Path, err = pConf.FieldInterpolatedString(bsoFieldPath); err != nil {
+		return
+	}
+	if conf.LocalFilePath, err = pConf.FieldInterpolatedString(bsoFieldLocalFilePath); err != nil {
 		return
 	}
 	if conf.BlobType, err = pConf.FieldInterpolatedString(bsoFieldBlobType); err != nil {
@@ -89,6 +96,10 @@ If the `+"`storage_connection_string`"+` does not contain the `+"`AccountName`"+
 				Example(`${!meta("kafka_key")}.json`).
 				Example(`${!json("doc.namespace")}/${!json("doc.id")}.json`).
 				Default(`${!count("files")}-${!timestamp_unix_nano()}.txt`),
+			service.NewInterpolatedStringField(bsoFieldLocalFilePath).
+				Description("The path of the local file to upload.").
+				Example(`/tmp/file.json`).
+				Default(``),
 			service.NewInterpolatedStringEnumField(bsoFieldBlobType, "BLOCK", "APPEND").
 				Description("Block and Append blobs are comprised of blocks, and each blob can support up to 50,000 blocks. The default value is `+\"`BLOCK`\"+`.`").
 				Advanced().
@@ -138,12 +149,17 @@ func (a *azureBlobStorageWriter) Connect(ctx context.Context) error {
 	return nil
 }
 
-func (a *azureBlobStorageWriter) uploadBlob(ctx context.Context, containerName, blobName, blobType string, message []byte) error {
+func (a *azureBlobStorageWriter) uploadBlob(ctx context.Context, containerName, blobName, blobType string, msg *service.Message) error {
 	containerClient := a.conf.client.ServiceClient().NewContainerClient(containerName)
-	var err error
+
 	if blobType == "APPEND" {
+		mBytes, err := msg.AsBytes()
+		if err != nil {
+			return err
+		}
+
 		appendBlobClient := containerClient.NewAppendBlobClient(blobName)
-		_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(bytes.NewReader(message)), nil)
+		_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(bytes.NewReader(mBytes)), nil)
 		if err != nil {
 			if isErrorCode(err, bloberror.BlobNotFound) {
 				_, err := appendBlobClient.Create(ctx, nil)
@@ -152,7 +168,7 @@ func (a *azureBlobStorageWriter) uploadBlob(ctx context.Context, containerName, 
 				}
 
 				// Try to upload the message again now that we created the blob
-				_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(bytes.NewReader(message)), nil)
+				_, err = appendBlobClient.AppendBlock(ctx, streaming.NopCloser(bytes.NewReader(mBytes)), nil)
 				if err != nil {
 					return fmt.Errorf("failed retrying to append block to blob: %w", err)
 				}
@@ -161,7 +177,12 @@ func (a *azureBlobStorageWriter) uploadBlob(ctx context.Context, containerName, 
 			}
 		}
 	} else {
-		_, err = containerClient.NewBlockBlobClient(blobName).UploadStream(ctx, bytes.NewReader(message), nil)
+		uploadBody, err := a.getBlockUploadBody(msg)
+		if err != nil {
+			return err
+		}
+
+		_, err = containerClient.NewBlockBlobClient(blobName).UploadStream(ctx, uploadBody, nil)
 		if err != nil {
 			return fmt.Errorf("failed to push block to blob: %w", err)
 		}
@@ -199,12 +220,7 @@ func (a *azureBlobStorageWriter) Write(ctx context.Context, msg *service.Message
 		return fmt.Errorf("blob type interpolation error: %s", err)
 	}
 
-	mBytes, err := msg.AsBytes()
-	if err != nil {
-		return err
-	}
-
-	if err := a.uploadBlob(ctx, containerName, blobName, blobType, mBytes); err != nil {
+	if err := a.uploadBlob(ctx, containerName, blobName, blobType, msg); err != nil {
 		if isErrorCode(err, bloberror.ContainerNotFound) {
 			var accessLevel string
 			if accessLevel, err = a.conf.PublicAccessLevel.TryString(msg); err != nil {
@@ -217,7 +233,7 @@ func (a *azureBlobStorageWriter) Write(ctx context.Context, msg *service.Message
 				}
 			}
 
-			if err := a.uploadBlob(ctx, containerName, blobName, blobType, mBytes); err != nil {
+			if err := a.uploadBlob(ctx, containerName, blobName, blobType, msg); err != nil {
 				return fmt.Errorf("error retrying to upload blob: %s", err)
 			}
 		} else {
@@ -225,6 +241,19 @@ func (a *azureBlobStorageWriter) Write(ctx context.Context, msg *service.Message
 		}
 	}
 	return nil
+}
+
+func (a *azureBlobStorageWriter) getBlockUploadBody(m *service.Message) (io.Reader, error) {
+	localFilePath, err := a.conf.LocalFilePath.TryString(m)
+	if err != nil {
+		return nil, fmt.Errorf("local file path interpolation error: %w", err)
+	}
+
+	file, err := os.Open(localFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("local file read error: %w", err)
+	}
+	return file, nil
 }
 
 func (a *azureBlobStorageWriter) Close(context.Context) error {
