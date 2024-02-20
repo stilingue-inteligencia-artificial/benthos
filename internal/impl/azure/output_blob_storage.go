@@ -243,7 +243,7 @@ func (a *azureBlobStorageWriter) getUploadBody(m *service.Message) (io.ReadSeeke
 		return nil, fmt.Errorf("local file path interpolation error: %w", err)
 	}
 
-	if localFilePath == "" {
+	if localFilePath != "" {
 		file, err := os.Open(localFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("local file read error: %w", err)
