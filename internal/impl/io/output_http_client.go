@@ -158,9 +158,10 @@ func (h *httpClientWriter) WriteBatch(ctx context.Context, msg service.MessageBa
 					return err
 				}
 			}
+		} else {
+			// Hard, need to do parallel requests limited by max parallelism.
+			return h.handleParallelRequests(msg)
 		}
-		// Hard, need to do parallel requests limited by max parallelism.
-		return h.handleParallelRequests(msg)
 	}
 
 	resultMsg, err := h.client.Send(ctx, msg)
