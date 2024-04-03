@@ -132,7 +132,7 @@ The mongodb operation to perform.
 
 Type: `string`  
 Default: `"insert-one"`  
-Options: `insert-one`, `delete-one`, `delete-many`, `replace-one`, `update-one`, `find-one`.
+Options: `insert-one`, `delete-one`, `delete-many`, `replace-one`, `update-one`, `update-many`, `find-one`.
 
 ### `write_concern`
 
@@ -167,7 +167,7 @@ Default: `""`
 
 ### `document_map`
 
-A bloblang map representing the records in the mongo db. Used to generate the document for mongodb by mapping the fields in the message to the mongodb fields. The document map is required for the operations insert-one, replace-one and update-one.
+A bloblang map representing the records in the mongo db. Used to generate the document for mongodb by mapping the fields in the message to the mongodb fields. The document map is required for the operations insert-one, replace-one, update-one and update-many.
 
 
 Type: `string`  
@@ -215,7 +215,7 @@ hint_map: |-
 
 ### `upsert`
 
-The upsert setting is optional and only applies for update-one and replace-one operations. If the filter specified in filter_map matches, the document is updated or replaced accordingly, otherwise it is created.
+The upsert setting is optional and only applies for update-one, update-many and replace-one operations. If the filter specified in filter_map matches, the document is updated or replaced accordingly, otherwise it is created.
 
 
 Type: `bool`  
