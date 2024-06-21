@@ -46,9 +46,6 @@ linters-settings:
   #     main:
   #       deny:
   #         - pkg: "io/ioutil"
-<<<<<<< HEAD
-
-=======
   testifylint:
     disable-all: true
     enable:
@@ -60,7 +57,6 @@ linters-settings:
       - len
       - expected-actual
       - error-nil
->>>>>>> v4.27.0
 linters:
   disable-all: true
   enable:

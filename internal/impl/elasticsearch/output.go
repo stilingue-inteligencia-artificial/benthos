@@ -411,6 +411,7 @@ func (e *Output) WriteBatch(ctx context.Context, msg service.MessageBatch) error
 		}
 
 		var newRequests []*pendingBulkIndex
+		var errorsOccurred bool
 		for i, resp := range result.Items {
 			for _, item := range resp {
 				if item.Status >= 200 && item.Status <= 299 {
@@ -426,6 +427,7 @@ func (e *Output) WriteBatch(ctx context.Context, msg service.MessageBatch) error
 				e.log.Errorf("Elasticsearch message '%v' rejected with status [%v]: %v\n", item.Id, item.Status, reason)
 				if !shouldRetry(item.Status) {
 					msg[i].SetError(fmt.Errorf("failed to send message '%v': %v", item.Id, reason))
+					errorsOccurred = true
 				} else {
 					// IMPORTANT: i exactly matches the index of our source requests
 					// and when we re-run our bulk request with errored requests
@@ -440,6 +442,11 @@ func (e *Output) WriteBatch(ctx context.Context, msg service.MessageBatch) error
 				}
 			}
 		}
+
+		if errorsOccurred {
+			return fmt.Errorf("errors occurred sending messages")
+		}
+
 		requests = newRequests
 
 		wait := boff.NextBackOff()

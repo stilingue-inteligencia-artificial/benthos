@@ -3,8 +3,6 @@ Changelog
 
 All notable changes to this project will be documented in this file.
 
-<<<<<<< HEAD
-=======
 ## 4.27.0 - 2024-04-23
 
 ### Added
@@ -39,7 +37,6 @@ All notable changes to this project will be documented in this file.
 - The log events from all inputs and outputs when they first connect have been made more consistent and no longer contain any information regarding the nature of their connections.
 - Splitting message batches with a `split` processor (or custom plugins) no longer results in downstream error handling loops around nacks. This was previously implemented as a feature to ensure unbounded expanded and split batches don't flood downstream services in the event of a minority of errors. However, introducing more clever origin tracking of errored messages has eliminated the need for this undocumented behaviour.
 
->>>>>>> v4.27.0
 ## 4.26.0 - 2024-03-18
 
 ### Added
@@ -68,27 +65,6 @@ All notable changes to this project will be documented in this file.
 - Fixed a regression in v4.25.0 where [template based components](https://www.benthos.dev/docs/configuration/templating) were not parsing correctly from configs.
 
 ## 4.25.0 - 2024-03-01
-<<<<<<< HEAD
-
-### Added
-
-- Field `credit` added to the `amqp_1` input to specify the maximum number of unacknowledged messages the sender can transmit.
-- Bloblang now supports root-level `if` statements.
-- New experimental `sql` cache.
-
-### Changed
-
-- The default value of the `amqp_1.credit` input has changed from `1` to `64`.
-
-## 4.25.1 - 2024-03-01
-
-### Fixed
-
-- Fixed a regression in v4.25.0 where [template based components](https://www.benthos.dev/docs/configuration/templating) were not parsing correctly from configs.
-
-## 4.25.0 - 2024-03-01
-=======
->>>>>>> v4.27.0
 
 ### Added
 
