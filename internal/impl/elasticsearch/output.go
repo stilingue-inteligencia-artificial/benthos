@@ -444,7 +444,7 @@ func (e *Output) WriteBatch(ctx context.Context, msg service.MessageBatch) error
 		}
 
 		if errorsOccurred {
-			return fmt.Errorf("errors occurred sending messages")
+			return errors.New("errors occurred sending messages")
 		}
 
 		requests = newRequests
