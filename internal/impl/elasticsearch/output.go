@@ -490,11 +490,14 @@ func (e *Output) buildBulkableRequest(p *pendingBulkIndex) (elastic.BulkableRequ
 		r := elastic.NewBulkUpdateRequest().
 			Index(p.Index).
 			Routing(p.Routing).
-			Id(p.ID).
-			Upsert(p.Doc)
+			Id(p.ID)
 
 		if p.StoredScript != "" {
+			r = r.Upsert(p.Doc)
 			addScript(p, r).ScriptedUpsert(true)
+		} else {
+			r = r.Doc(p.Doc).
+				DocAsUpsert(true)
 		}
 
 		if p.Type != "" {
