@@ -179,8 +179,9 @@ func init() {
 //------------------------------------------------------------------------------
 
 type azureObjectTarget struct {
-	key   string
-	ackFn func(context.Context, error) error
+	key                  string
+	targetsInputMetadata map[string]any
+	ackFn                func(context.Context, error) error
 }
 
 func newAzureObjectTarget(key string, ackFn codec.ReaderAckFn) *azureObjectTarget {
@@ -218,10 +219,11 @@ func deleteAzureObjectAckFn(
 //------------------------------------------------------------------------------
 
 type azurePendingObject struct {
-	target    *azureObjectTarget
-	obj       azblob.DownloadStreamResponse
-	extracted int
-	scanner   interop.FallbackReaderStream
+	targetsInputMetadata map[string]any
+	target               *azureObjectTarget
+	obj                  azblob.DownloadStreamResponse
+	extracted            int
+	scanner              interop.FallbackReaderStream
 }
 
 type azureTargetReader interface {
@@ -278,11 +280,21 @@ func (a *azureTargetStreamReader) Pop(ctx context.Context) (*azureObjectTarget, 
 				continue
 			}
 
+			metadata := map[string]any{}
+			err = msg.MetaWalkMut(func(k string, v any) error {
+				metadata[k] = v
+				return nil
+			})
+			if err != nil {
+				a.log.Warnf("Azure blob storage targets input failed to extract metadata from message: %v", err)
+			}
+
 			pendingAcks++
 
 			var ackOnce sync.Once
 			a.pending = append(a.pending, &azureObjectTarget{
-				key: name,
+				key:                  name,
+				targetsInputMetadata: metadata,
 				ackFn: func(ctx context.Context, err error) (aerr error) {
 					if err != nil {
 						nackOnce.Do(func() {
@@ -437,11 +449,15 @@ func (a *azureBlobStorage) getObjectTarget(ctx context.Context) (*azurePendingOb
 	}
 
 	a.object = object
+	object.targetsInputMetadata = target.targetsInputMetadata
 	return object, nil
 }
 
 func blobStorageMetaToBatch(p *azurePendingObject, containerName string, parts service.MessageBatch) {
 	for _, part := range parts {
+		for k, v := range p.targetsInputMetadata {
+			part.MetaSetMut(fmt.Sprintf("targets_input_%v", k), v)
+		}
 		part.MetaSetMut("blob_storage_key", p.target.key)
 		part.MetaSetMut("blob_storage_container", containerName)
 		if p.obj.LastModified != nil {
