@@ -25,10 +25,11 @@ import (
 
 const (
 	// Blob Storage Input Fields
-	bsiFieldContainer     = "container"
-	bsiFieldPrefix        = "prefix"
-	bsiFieldDeleteObjects = "delete_objects"
-	bsiFieldTargetsInput  = "targets_input"
+	bsiFieldContainer          = "container"
+	bsiFieldPrefix             = "prefix"
+	bsiFieldDeleteObjects      = "delete_objects"
+	bsiFieldTargetsInput       = "targets_input"
+	targetsInputMetadataPrefix = "targets_input_"
 )
 
 type bsiConfig struct {
@@ -456,7 +457,7 @@ func (a *azureBlobStorage) getObjectTarget(ctx context.Context) (*azurePendingOb
 func blobStorageMetaToBatch(p *azurePendingObject, containerName string, parts service.MessageBatch) {
 	for _, part := range parts {
 		for k, v := range p.targetsInputMetadata {
-			part.MetaSetMut(fmt.Sprintf("targets_input_%v", k), v)
+			part.MetaSetMut(fmt.Sprintf("%v%v", targetsInputMetadataPrefix, k), v)
 		}
 		part.MetaSetMut("blob_storage_key", p.target.key)
 		part.MetaSetMut("blob_storage_container", containerName)
