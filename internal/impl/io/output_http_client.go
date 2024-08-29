@@ -193,10 +193,6 @@ func (h *httpClientWriter) WriteBatch(ctx context.Context, msg service.MessageBa
 }
 
 func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) error {
-	results := make(service.MessageBatch, len(msg))
-	for i, p := range msg {
-		results[i] = p.Copy()
-	}
 	reqChan, resChan := make(chan int), make(chan error)
 
 	for i := 0; i < len(msg); i++ {
@@ -209,17 +205,17 @@ func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) erro
 				}
 				if err == nil {
 					mBytes, _ := result[0].AsBytes()
-					results[index].SetBytes(mBytes)
+					msg[index].SetBytes(mBytes)
 					_ = result[0].MetaWalkMut(func(k string, v any) error {
-						results[index].MetaSetMut(k, v)
+						msg[index].MetaSetMut(k, v)
 						return nil
 					})
 				} else {
 					var hErr component.ErrUnexpectedHTTPRes
 					if ok := errors.As(err, &hErr); ok {
-						results[index].MetaSetMut("http_status_code", hErr.Code)
+						msg[index].MetaSetMut("http_status_code", hErr.Code)
 					}
-					results[index].SetError(err)
+					msg[index].SetError(err)
 				}
 				resChan <- err
 			}
@@ -230,17 +226,25 @@ func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) erro
 			reqChan <- i
 		}
 	}()
+
+	errored := false
 	for i := 0; i < len(msg); i++ {
 		if err := <-resChan; err != nil {
 			h.log.Errorf("HTTP parallel request to '%v' failed: %v", h.logURL, err)
+			errored = true
 		}
 	}
 
 	close(reqChan)
 
-	if len(results) < 1 {
+	if len(msg) < 1 {
 		return fmt.Errorf("HTTP response from '%v' was empty", h.logURL)
 	}
+
+	if errored {
+		return errors.New("one or more HTTP requests failed")
+	}
+
 	return nil
 }
 
