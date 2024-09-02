@@ -2683,30 +2683,6 @@ root.foo = this.foo.zip(this.bar, this.baz)
 
 ## Parsing
 
-### `bloblang`
-
-:::caution BETA
-This method is mostly stable but breaking changes could still be made outside of major version releases if a fundamental problem with it is found.
-:::
-Executes an argument Bloblang mapping on the target. This method can be used in order to execute dynamic mappings. Imports and functions that interact with the environment, such as `file` and `env`, or that access message information directly, such as `content` or `json`, are not enabled for dynamic Bloblang mappings.
-
-#### Parameters
-
-**`mapping`** &lt;string&gt; The mapping to execute.  
-
-#### Examples
-
-
-```coffee
-root.body = this.body.bloblang(this.mapping)
-
-# In:  {"body":{"foo":"hello world"},"mapping":"root.foo = this.foo.uppercase()"}
-# Out: {"body":{"foo":"HELLO WORLD"}}
-
-# In:  {"body":{"foo":"hello world 2"},"mapping":"root.foo = this.foo.capitalize()"}
-# Out: {"body":{"foo":"Hello World 2"}}
-```
-
 ### `format_json`
 
 :::caution BETA

@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/benthosdev/benthos/v4/internal/bloblang/parser"
+	"github.com/benthosdev/benthos/v4/internal/bloblang/plugins"
 	"github.com/benthosdev/benthos/v4/internal/bundle"
 	"github.com/benthosdev/benthos/v4/internal/cli/blobl"
 	"github.com/benthosdev/benthos/v4/internal/cli/common"
@@ -281,5 +282,9 @@ https://benthos.dev/docs/guides/streams_mode/about`[1:],
 // call blocks until either the pipeline shuts down or a termination signal is
 // received.
 func Run(ctx context.Context) {
+	if err := plugins.Register(); err != nil {
+		panic(err)
+	}
+
 	_ = App().RunContext(ctx, os.Args)
 }
