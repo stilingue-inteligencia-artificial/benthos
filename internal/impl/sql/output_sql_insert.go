@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/Masterminds/squirrel"
+	mssql "github.com/denisenkom/go-mssqldb"
 
 	"github.com/Jeffail/shutdown"
 
@@ -253,6 +254,13 @@ func (s *sqlInsertOutput) WriteBatch(ctx context.Context, batch service.MessageB
 		}
 
 		if tx == nil {
+			if s.driver == "mssql" {
+				for i, arg := range args {
+					if str, validStr := arg.(string); validStr {
+						args[i] = mssql.VarChar(str)
+					}
+				}
+			}
 			insertBuilder = insertBuilder.Values(args...)
 		} else if _, err := stmt.Exec(args...); err != nil {
 			_ = tx.Rollback()
