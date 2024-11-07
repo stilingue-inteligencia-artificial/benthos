@@ -41,7 +41,7 @@ func TestApplyMSSQLDataType(t *testing.T) {
 			arg:    "2023-10-01T12:00:00Z",
 			column: "col1",
 			DataType: map[string]any{
-				"col1": map[string]any{"type": "DATETIME", "format": time.RFC3339},
+				"col1": map[string]any{"type": "DATETIME", "datetime": map[string]any{"format": time.RFC3339}},
 			},
 			expected: mssql.DateTime1(time.Date(2023, 10, 1, 12, 0, 0, 0, time.UTC)),
 			wantErr:  false,
@@ -51,7 +51,7 @@ func TestApplyMSSQLDataType(t *testing.T) {
 			arg:    "2023-10-01T12:00:00Z",
 			column: "col1",
 			DataType: map[string]any{
-				"col1": map[string]any{"type": "DATETIME_OFFSET", "format": time.RFC3339},
+				"col1": map[string]any{"type": "DATETIME_OFFSET", "datetime_offset": map[string]any{"format": time.RFC3339}},
 			},
 			expected: mssql.DateTimeOffset(time.Date(2023, 10, 1, 12, 0, 0, 0, time.UTC)),
 			wantErr:  false,
@@ -61,7 +61,7 @@ func TestApplyMSSQLDataType(t *testing.T) {
 			arg:    "2023-10-01",
 			column: "col1",
 			DataType: map[string]any{
-				"col1": map[string]any{"type": "DATE", "format": "2006-01-02"},
+				"col1": map[string]any{"type": "DATE", "date": map[string]any{"format": "2006-01-02"}},
 			},
 			expected: civil.Date{Year: 2023, Month: 10, Day: 1},
 			wantErr:  false,
@@ -71,7 +71,7 @@ func TestApplyMSSQLDataType(t *testing.T) {
 			arg:    "invalid-date",
 			column: "col1",
 			DataType: map[string]any{
-				"col1": map[string]any{"type": "DATETIME", "format": time.RFC3339},
+				"col1": map[string]any{"type": "DATETIME", "datetime": map[string]any{"format": time.RFC3339}},
 			},
 			expected: "invalid-date",
 			wantErr:  true,
