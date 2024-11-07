@@ -36,6 +36,7 @@ output:
     dsn: clickhouse://username:password@host1:9000,host2:9000/database?dial_timeout=200ms&max_execution_time=60 # No default (required)
     table: foo # No default (required)
     columns: [] # No default (required)
+    data_types: [] # No default (optional)
     args_mapping: root = [ this.cat.meow, this.doc.woofs[0] ] # No default (required)
     max_in_flight: 64
     batching:
@@ -57,6 +58,7 @@ output:
     dsn: clickhouse://username:password@host1:9000,host2:9000/database?dial_timeout=200ms&max_execution_time=60 # No default (required)
     table: foo # No default (required)
     columns: [] # No default (required)
+    data_types: [] # No default (optional)
     args_mapping: root = [ this.cat.meow, this.doc.woofs[0] ] # No default (required)
     prefix: "" # No default (optional)
     suffix: ON CONFLICT (name) DO NOTHING # No default (optional)
@@ -191,6 +193,27 @@ columns:
   - foo
   - bar
   - baz
+```
+
+### `data_types`
+
+The columns data types.
+
+
+Type: `array`  
+
+```yml
+# Examples
+
+data_types:
+  - name: foo
+    type: VARCHAR
+  - format: "2006-01-02 15:04:05.999"
+    name: bar
+    type: DATETIME
+  - format: "2006-01-02"
+    name: baz
+    type: DATE
 ```
 
 ### `args_mapping`
