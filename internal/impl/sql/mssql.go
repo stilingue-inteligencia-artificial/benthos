@@ -8,9 +8,6 @@ import (
 )
 
 func applyMSSQLDataType(arg any, column string, dataTypes map[string]any) (any, error) {
-	if len(dataTypes) == 0 {
-		return arg, nil
-	}
 	fdt, found := dataTypes[column]
 	if !found {
 		return arg, nil
