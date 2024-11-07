@@ -208,10 +208,12 @@ Type: `array`
 data_types:
   - name: foo
     type: VARCHAR
-  - format: "2006-01-02 15:04:05.999"
+  - datetime:
+      format: "2006-01-02 15:04:05.999"
     name: bar
     type: DATETIME
-  - format: "2006-01-02"
+  - date:
+      format: "2006-01-02"
     name: baz
     type: DATE
 ```
