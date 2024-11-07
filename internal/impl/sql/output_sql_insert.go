@@ -34,14 +34,18 @@ func sqlInsertOutputConfig() *service.ConfigSpec {
 				"type": "VARCHAR",
 			},
 			map[string]any{
-				"name":   "bar",
-				"type":   "DATETIME",
-				"format": "2006-01-02 15:04:05.999",
+				"name": "bar",
+				"type": "DATETIME",
+				"datetime": map[string]any{
+					"format": "2006-01-02 15:04:05.999",
+				},
 			},
 			map[string]any{
-				"name":   "baz",
-				"type":   "DATE",
-				"format": "2006-01-02",
+				"name": "baz",
+				"type": "DATE",
+				"date": map[string]any{
+					"format": "2006-01-02",
+				},
 			},
 		}),
 		).
