@@ -11,6 +11,17 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/eclipse/paho.mqtt.golang v1.4.3
+	github.com/fatih/color v1.16.0
+	github.com/fsnotify/fsnotify v1.7.0
+	github.com/generikvault/gvalstrings v0.0.0-20180926130504-471f38f0112a
+	github.com/getsentry/sentry-go v0.27.0
+	github.com/go-faker/faker/v4 v4.3.0
+	github.com/go-sql-driver/mysql v1.7.1
+	github.com/gocql/gocql v1.6.0
+	github.com/gofrs/uuid v4.4.0+incompatible
+	github.com/golang-jwt/jwt/v4 v4.5.0
+	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/gorilla/websocket v1.5.3
@@ -56,6 +67,15 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gofrs/uuid/v5 v5.4.0
+	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
+	github.com/goccy/go-json v0.10.2 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.0 // indirect
+	github.com/golang-sql/sqlexp v0.1.0 // indirect
+	github.com/golang/glog v1.2.0 // indirect
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/govalues/decimal v0.1.36 // indirect
 	github.com/lib/pq v1.10.9 // indirect
