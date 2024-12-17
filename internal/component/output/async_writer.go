@@ -3,6 +3,7 @@ package output
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -118,8 +119,14 @@ func (w *AsyncWriter) loop() {
 				if w.shutSig.IsSoftStopSignalled() || errors.Is(err, component.ErrTypeClosed) {
 					return false
 				}
+
 				w.log.Error("Failed to connect to %v: %v\n", w.typeStr, err)
 				mFailedConn.Incr(1)
+
+				if ignoreOutputConnectionErrors() {
+					w.log.Warn("Ignoring connection error due to BENTHOS_IGNORE_OUTPUT_CONN_ERRORS\n")
+					return true
+				}
 
 				var nextBoff time.Duration
 
@@ -286,4 +293,8 @@ func sleepWithCancellation(ctx context.Context, d time.Duration) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+func ignoreOutputConnectionErrors() bool {
+	return os.Getenv("BENTHOS_IGNORE_OUTPUT_CONN_ERRORS") == "true"
 }
