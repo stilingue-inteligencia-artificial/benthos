@@ -35,6 +35,8 @@ output:
     driver: "" # No default (required)
     dsn: clickhouse://username:password@host1:9000,host2:9000/database?dial_timeout=200ms&max_execution_time=60 # No default (required)
     query: INSERT INTO footable (foo, bar, baz) VALUES (?, ?, ?); # No default (required)
+    columns: []
+    data_types: []
     args_mapping: root = [ this.cat.meow, this.doc.woofs[0] ] # No default (optional)
     max_in_flight: 64
     batching:
@@ -56,6 +58,8 @@ output:
     dsn: clickhouse://username:password@host1:9000,host2:9000/database?dial_timeout=200ms&max_execution_time=60 # No default (required)
     query: INSERT INTO footable (foo, bar, baz) VALUES (?, ?, ?); # No default (required)
     unsafe_dynamic_query: false
+    columns: []
+    data_types: []
     args_mapping: root = [ this.cat.meow, this.doc.woofs[0] ] # No default (optional)
     max_in_flight: 64
     init_files: [] # No default (optional)
@@ -192,6 +196,47 @@ Whether to enable [interpolation functions](/docs/configuration/interpolation/#b
 
 Type: `bool`  
 Default: `false`  
+
+### `columns`
+
+A list of columns to insert.
+
+
+Type: `array`  
+Default: `[]`  
+
+```yml
+# Examples
+
+columns:
+  - foo
+  - bar
+  - baz
+```
+
+### `data_types`
+
+The columns data types.
+
+
+Type: `array`  
+Default: `[]`  
+
+```yml
+# Examples
+
+data_types:
+  - name: foo
+    type: VARCHAR
+  - datetime:
+      format: "2006-01-02 15:04:05.999"
+    name: bar
+    type: DATETIME
+  - date:
+      format: "2006-01-02"
+    name: baz
+    type: DATE
+```
 
 ### `args_mapping`
 
