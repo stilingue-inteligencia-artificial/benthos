@@ -27,7 +27,8 @@ func sqlInsertOutputConfig() *service.ConfigSpec {
 			Example("foo")).
 		Field(service.NewStringListField("columns").
 			Description("A list of columns to insert.").
-			Example([]string{"foo", "bar", "baz"})).
+			Example([]string{"foo", "bar", "baz"}).
+			Default([]string{})).
 		Field(service.NewAnyListField("data_types").Description("The columns data types.").Optional().Example([]any{
 			map[string]any{
 				"name": "foo",
@@ -47,8 +48,8 @@ func sqlInsertOutputConfig() *service.ConfigSpec {
 					"format": "2006-01-02",
 				},
 			},
-		}),
-		).
+		}).
+			Default([]any{})).
 		Field(service.NewBloblangField("args_mapping").
 			Description("A [Bloblang mapping](/docs/guides/bloblang/about) which should evaluate to an array of values matching in size to the number of columns specified.").
 			Example("root = [ this.cat.meow, this.doc.woofs[0] ]").
@@ -297,7 +298,7 @@ func (s *sqlInsertOutput) WriteBatch(ctx context.Context, batch service.MessageB
 		}
 
 		if tx == nil {
-			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found {
+			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found && len(s.columns) == len(args) {
 				for i, arg := range args {
 					newArg, err := applyDataTypeFn(arg, s.columns[i], s.dataTypes)
 					if err != nil {
