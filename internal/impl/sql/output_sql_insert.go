@@ -298,13 +298,17 @@ func (s *sqlInsertOutput) WriteBatch(ctx context.Context, batch service.MessageB
 		}
 
 		if tx == nil {
-			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found && len(s.columns) == len(args) {
-				for i, arg := range args {
-					newArg, err := applyDataTypeFn(arg, s.columns[i], s.dataTypes)
-					if err != nil {
-						return err
+			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found {
+				if len(s.dataTypes) == len(args) {
+					for i, arg := range args {
+						newArg, err := applyDataTypeFn(arg, s.columns[i], s.dataTypes)
+						if err != nil {
+							return err
+						}
+						args[i] = newArg
 					}
-					args[i] = newArg
+				} else {
+					return fmt.Errorf("number of data types must match number of columns")
 				}
 			}
 			insertBuilder = insertBuilder.Values(args...)
