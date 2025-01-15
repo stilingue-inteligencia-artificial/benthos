@@ -256,7 +256,7 @@ func (s *sqlRawOutput) WriteBatch(ctx context.Context, batch service.MessageBatc
 				return fmt.Errorf("mapping returned non-array result: %T", iargs)
 			}
 
-			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found {
+			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found && len(s.dataTypes) > 0 {
 				if len(s.dataTypes) == len(args) {
 					for i, arg := range args {
 						newArg, err := applyDataTypeFn(arg, s.columns[i], s.dataTypes)
