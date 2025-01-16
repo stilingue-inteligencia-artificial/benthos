@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -266,7 +267,7 @@ func (s *sqlRawOutput) WriteBatch(ctx context.Context, batch service.MessageBatc
 						args[i] = newArg
 					}
 				} else {
-					return fmt.Errorf("number of data types must match number of columns")
+					return errors.New("number of data types must match number of columns")
 				}
 			}
 		}

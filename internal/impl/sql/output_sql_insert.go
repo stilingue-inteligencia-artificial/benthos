@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -308,7 +309,7 @@ func (s *sqlInsertOutput) WriteBatch(ctx context.Context, batch service.MessageB
 						args[i] = newArg
 					}
 				} else {
-					return fmt.Errorf("number of data types must match number of columns")
+					return errors.New("number of data types must match number of columns")
 				}
 			}
 			insertBuilder = insertBuilder.Values(args...)
