@@ -35,8 +35,8 @@ output:
     driver: "" # No default (required)
     dsn: clickhouse://username:password@host1:9000,host2:9000/database?dial_timeout=200ms&max_execution_time=60 # No default (required)
     table: foo # No default (required)
-    columns: [] # No default (required)
-    data_types: [] # No default (optional)
+    columns: []
+    data_types: []
     args_mapping: root = [ this.cat.meow, this.doc.woofs[0] ] # No default (required)
     max_in_flight: 64
     batching:
@@ -57,8 +57,8 @@ output:
     driver: "" # No default (required)
     dsn: clickhouse://username:password@host1:9000,host2:9000/database?dial_timeout=200ms&max_execution_time=60 # No default (required)
     table: foo # No default (required)
-    columns: [] # No default (required)
-    data_types: [] # No default (optional)
+    columns: []
+    data_types: []
     args_mapping: root = [ this.cat.meow, this.doc.woofs[0] ] # No default (required)
     prefix: "" # No default (optional)
     suffix: ON CONFLICT (name) DO NOTHING # No default (optional)
@@ -185,6 +185,7 @@ A list of columns to insert.
 
 
 Type: `array`  
+Default: `[]`  
 
 ```yml
 # Examples
@@ -201,6 +202,7 @@ The columns data types.
 
 
 Type: `array`  
+Default: `[]`  
 
 ```yml
 # Examples

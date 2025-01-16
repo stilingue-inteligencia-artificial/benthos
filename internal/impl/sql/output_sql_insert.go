@@ -3,6 +3,7 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -27,7 +28,8 @@ func sqlInsertOutputConfig() *service.ConfigSpec {
 			Example("foo")).
 		Field(service.NewStringListField("columns").
 			Description("A list of columns to insert.").
-			Example([]string{"foo", "bar", "baz"})).
+			Example([]string{"foo", "bar", "baz"}).
+			Default([]string{})).
 		Field(service.NewAnyListField("data_types").Description("The columns data types.").Optional().Example([]any{
 			map[string]any{
 				"name": "foo",
@@ -47,8 +49,8 @@ func sqlInsertOutputConfig() *service.ConfigSpec {
 					"format": "2006-01-02",
 				},
 			},
-		}),
-		).
+		}).
+			Default([]any{})).
 		Field(service.NewBloblangField("args_mapping").
 			Description("A [Bloblang mapping](/docs/guides/bloblang/about) which should evaluate to an array of values matching in size to the number of columns specified.").
 			Example("root = [ this.cat.meow, this.doc.woofs[0] ]").
@@ -297,13 +299,17 @@ func (s *sqlInsertOutput) WriteBatch(ctx context.Context, batch service.MessageB
 		}
 
 		if tx == nil {
-			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found {
-				for i, arg := range args {
-					newArg, err := applyDataTypeFn(arg, s.columns[i], s.dataTypes)
-					if err != nil {
-						return err
+			if applyDataTypeFn, found := applyDataTypeMap[s.driver]; found && len(s.dataTypes) > 0 {
+				if len(s.dataTypes) == len(args) {
+					for i, arg := range args {
+						newArg, err := applyDataTypeFn(arg, s.columns[i], s.dataTypes)
+						if err != nil {
+							return err
+						}
+						args[i] = newArg
 					}
-					args[i] = newArg
+				} else {
+					return errors.New("number of data types must match number of columns")
 				}
 			}
 			insertBuilder = insertBuilder.Values(args...)
