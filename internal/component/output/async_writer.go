@@ -212,7 +212,7 @@ func (w *AsyncWriter) loop() {
 			latency, err := w.latencyMeasuringWrite(closeLeisureCtx, ts.Payload)
 
 			// If our writer says it is not connected.
-			if errors.Is(err, component.ErrNotConnected) {
+			if errors.Is(err, component.ErrNotConnected) && !ignoreOutputConnectionErrors() {
 				latency, err = connectLoop(ts.Payload)
 			} else if err != nil {
 				mError.Incr(1)
