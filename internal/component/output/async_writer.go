@@ -63,21 +63,22 @@ type AsyncWriter struct {
 	transactions <-chan message.Transaction
 
 	startOnce sync.Once
-	shutSig   *shutdown.Signaller
+	shutSig       *shutdown.Signaller
+	reconnectedAt time.Time
 }
 
 // NewAsyncWriter creates a Streamed implementation around an AsyncSink.
 func NewAsyncWriter(typeStr string, maxInflight int, w AsyncSink, mgr component.Observability) (Streamed, error) {
 	aWriter := &AsyncWriter{
-		typeStr:      typeStr,
-		maxInflight:  maxInflight,
-		writer:       w,
-		mgr:          mgr,
-		log:          mgr.Logger(),
-		stats:        mgr.Metrics(),
-		tracer:       mgr.Tracer(),
-		transactions: nil,
-		shutSig:      shutdown.NewSignaller(),
+		typeStr:       typeStr,
+		maxInflight:   maxInflight,
+		writer:        w,
+		log:           mgr.Logger(),
+		stats:         mgr.Metrics(),
+		tracer:        mgr.Tracer(),
+		transactions:  nil,
+		shutSig:       shutdown.NewSignaller(),
+		reconnectedAt: time.Now(),
 	}
 	aWriter.connection.Store(component.ConnectionPending(mgr))
 	return aWriter, nil
@@ -196,8 +197,12 @@ func (w *AsyncWriter) loop() {
 				w.connection.Store(component.ConnectionActive(w.mgr))
 				mConn.Incr(1)
 				return
-			} else if err != nil {
+			}
+			if err != nil {
 				mError.Incr(1)
+				if err == component.ErrNotConnected && ignoreOutputConnectionErrors() {
+					return
+				}
 			}
 		}
 	}
@@ -223,8 +228,9 @@ func (w *AsyncWriter) loop() {
 			latency, err := w.latencyMeasuringWrite(closeLeisureCtx, ts.Payload)
 
 			// If our writer says it is not connected.
-			if errors.Is(err, component.ErrNotConnected) {
+			if errors.Is(err, component.ErrNotConnected) && (!ignoreOutputConnectionErrors() || w.reconnectionTimeout()) {
 				latency, err = connectLoop(ts.Payload)
+				w.reconnectedAt = time.Now()
 			} else if err != nil {
 				mError.Incr(1)
 			}
@@ -261,6 +267,20 @@ func (w *AsyncWriter) loop() {
 		go writerLoop()
 	}
 	wg.Wait()
+}
+
+func (w *AsyncWriter) reconnectionTimeout() bool {
+	reconnectTimeout := os.Getenv("BENTHOS_RECONNECT_TIMEOUT")
+	if reconnectTimeout == "" {
+		reconnectTimeout = "5m"
+	}
+
+	dur, err := time.ParseDuration(reconnectTimeout)
+	if err == nil {
+		return time.Now().After(w.reconnectedAt.Add(dur))
+	}
+	w.log.Error("Failed to parse BENTHOS_RECONNECT_TIMEOUT: %v\n", err)
+	return false
 }
 
 // Consume assigns a messages channel for the output to read.
