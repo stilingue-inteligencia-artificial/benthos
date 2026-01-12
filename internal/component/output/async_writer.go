@@ -62,7 +62,7 @@ type AsyncWriter struct {
 
 	transactions <-chan message.Transaction
 
-	startOnce sync.Once
+	startOnce     sync.Once
 	shutSig       *shutdown.Signaller
 	reconnectedAt time.Time
 }
@@ -73,6 +73,7 @@ func NewAsyncWriter(typeStr string, maxInflight int, w AsyncSink, mgr component.
 		typeStr:       typeStr,
 		maxInflight:   maxInflight,
 		writer:        w,
+		mgr:           mgr,
 		log:           mgr.Logger(),
 		stats:         mgr.Metrics(),
 		tracer:        mgr.Tracer(),

@@ -7,8 +7,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/redpanda-data/benthos/v4/internal/component"
-	"github.com/redpanda-data/benthos/v4/internal/component/output"
 	"github.com/redpanda-data/benthos/v4/internal/httpclient"
 	"github.com/redpanda-data/benthos/v4/public/service"
 )
@@ -193,7 +191,7 @@ func (h *httpClientWriter) WriteBatch(ctx context.Context, msg service.MessageBa
 func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) error {
 	reqChan, resChan := make(chan int), make(chan error)
 
-	for i := 0; i < len(msg); i++ {
+	for range msg {
 		go func() {
 			for index := range reqChan {
 				tmpMsg := service.MessageBatch{msg[index]}
@@ -209,7 +207,7 @@ func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) erro
 						return nil
 					})
 				} else {
-					var hErr component.ErrUnexpectedHTTPRes
+					var hErr httpclient.ErrUnexpectedHTTPRes
 					if ok := errors.As(err, &hErr); ok {
 						msg[index].MetaSetMut("http_status_code", hErr.Code)
 					}
@@ -220,13 +218,13 @@ func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) erro
 		}()
 	}
 	go func() {
-		for i := 0; i < len(msg); i++ {
+		for i := range msg {
 			reqChan <- i
 		}
 	}()
 
 	errored := false
-	for i := 0; i < len(msg); i++ {
+	for range msg {
 		if err := <-resChan; err != nil {
 			h.log.Errorf("HTTP parallel request to '%v' failed: %v", h.logURL, err)
 			errored = true
