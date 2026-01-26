@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -11,11 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestRateLimitBasic(t *testing.T) {
@@ -45,7 +47,7 @@ rate_limit:
 		[]byte(`{"key":"1","value":"foo 3"}`),
 	})
 
-	output, res := proc.ProcessBatch(context.Background(), input)
+	output, res := proc.ProcessBatch(t.Context(), input)
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -90,7 +92,7 @@ rate_limit:
 
 	closedChan := make(chan struct{})
 	go func() {
-		output, res := proc.ProcessBatch(context.Background(), input)
+		output, res := proc.ProcessBatch(t.Context(), input)
 		if res != nil {
 			t.Error(res)
 		}
@@ -105,7 +107,7 @@ rate_limit:
 		close(closedChan)
 	}()
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 	assert.NoError(t, proc.Close(ctx))
 
@@ -143,7 +145,7 @@ rate_limit:
 
 	closedChan := make(chan struct{})
 	go func() {
-		output, res := proc.ProcessBatch(context.Background(), input)
+		output, res := proc.ProcessBatch(t.Context(), input)
 		if res != nil {
 			t.Error(res)
 		}
@@ -158,7 +160,7 @@ rate_limit:
 		close(closedChan)
 	}()
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 	assert.NoError(t, proc.Close(ctx))
 

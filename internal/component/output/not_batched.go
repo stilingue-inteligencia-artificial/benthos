@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package output
 
 import (
@@ -7,9 +9,9 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type notBatchedOutput struct {
@@ -18,7 +20,8 @@ type notBatchedOutput struct {
 	inChan  <-chan message.Transaction
 	outChan chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 // OnlySinglePayloads expands message batches into individual payloads,
@@ -144,12 +147,22 @@ func (n *notBatchedOutput) Consume(ts <-chan message.Transaction) error {
 		return err
 	}
 	n.inChan = ts
-	go n.loop()
 	return nil
 }
 
-func (n *notBatchedOutput) Connected() bool {
-	return n.out.Connected()
+func (n *notBatchedOutput) TriggerStartConsuming() {
+	n.out.TriggerStartConsuming()
+	n.startOnce.Do(func() {
+		go n.loop()
+	})
+}
+
+func (n *notBatchedOutput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return n.out.ConnectionTest(ctx)
+}
+
+func (n *notBatchedOutput) ConnectionStatus() component.ConnectionStatuses {
+	return n.out.ConnectionStatus()
 }
 
 func (n *notBatchedOutput) TriggerCloseNow() {

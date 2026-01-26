@@ -1,11 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package metadata
 
 import (
 	"slices"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // ExcludeFilterFields returns a docs spec for the fields within a metadata

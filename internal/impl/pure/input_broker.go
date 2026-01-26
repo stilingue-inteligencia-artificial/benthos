@@ -1,12 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"errors"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/input/batcher"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/input/batcher"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 // ErrBrokerNoInputs is returned when creating a broker with zero inputs.
@@ -56,13 +58,13 @@ input:
 
 If the number of copies is greater than zero the list will be copied that number of times. For example, if your inputs were of type foo and bar, with 'copies' set to '2', you would end up with two 'foo' inputs and two 'bar' inputs.
 
-### Batching
+== Batching
 
-It's possible to configure a [batch policy](/docs/configuration/batching#batch-policy) with a broker using the `+"`batching`"+` fields. When doing this the feeds from all child inputs are combined. Some inputs do not support broker based batching and specify this in their documentation.
+It's possible to configure a xref:configuration:batching.adoc#batch-policy[batch policy] with a broker using the `+"`batching`"+` fields. When doing this the feeds from all child inputs are combined. Some inputs do not support broker based batching and specify this in their documentation.
 
-### Processors
+== Processors
 
-It is possible to configure [processors](/docs/components/processors/about) at the broker level, where they will be applied to _all_ child inputs, as well as on the individual child inputs. If you have processors at both the broker level _and_ on child inputs then the broker processors will be applied _after_ the child nodes processors.`).
+It is possible to configure xref:components:processors/about.adoc[processors] at the broker level, where they will be applied to _all_ child inputs, as well as on the individual child inputs. If you have processors at both the broker level _and_ on child inputs then the broker processors will be applied _after_ the child nodes processors.`).
 		Fields(
 			service.NewIntField(ibFieldCopies).
 				Description("Whatever is specified within `inputs` will be created this many times.").
@@ -75,7 +77,7 @@ It is possible to configure [processors](/docs/components/processors/about) at t
 }
 
 func init() {
-	err := service.RegisterBatchInput("broker", brokerInputSpec(),
+	service.MustRegisterBatchInput("broker", brokerInputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 			i, err := newBrokerInputFromParsed(conf, mgr)
 			if err != nil {
@@ -83,9 +85,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalInput(i), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func newBrokerInputFromParsed(conf *service.ParsedConfig, mgr *service.Resources) (input.Streamed, error) {

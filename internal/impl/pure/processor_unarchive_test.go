@@ -1,18 +1,19 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"archive/tar"
 	"archive/zip"
 	"bytes"
-	"context"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestUnarchiveBadAlgo(t *testing.T) {
@@ -71,7 +72,7 @@ format: tar
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage(buf.Bytes()))
+	msgs, res := proc.Process(t.Context(), service.NewMessage(buf.Bytes()))
 	require.NoError(t, res)
 	require.Len(t, msgs, len(exp))
 
@@ -125,7 +126,7 @@ format: zip
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage(buf.Bytes()))
+	msgs, res := proc.Process(t.Context(), service.NewMessage(buf.Bytes()))
 	require.NoError(t, res)
 	require.Len(t, msgs, len(exp))
 
@@ -157,7 +158,7 @@ format: lines
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage([]byte(
+	msgs, res := proc.Process(t.Context(), service.NewMessage([]byte(
 		`hello world first part
 hello world second part
 third part
@@ -192,7 +193,7 @@ format: json_documents
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage([]byte(
+	msgs, res := proc.Process(t.Context(), service.NewMessage([]byte(
 		`{"foo":"bar"} 5 "testing 123" ["root", "is", "an", "array"] {"bar": "baz"} true`,
 	)))
 	require.NoError(t, res)
@@ -222,7 +223,7 @@ format: json_array
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage([]byte(
+	msgs, res := proc.Process(t.Context(), service.NewMessage([]byte(
 		`[{"foo":"bar"},5,"testing 123",["nested","array"],true]`,
 	)))
 	require.NoError(t, res)
@@ -252,7 +253,7 @@ format: json_map
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage([]byte(
+	msgs, res := proc.Process(t.Context(), service.NewMessage([]byte(
 		`{"a":{"foo":"bar"},"b":5,"c":"testing 123","d":["nested","array"],"e":true}`,
 	)))
 	require.NoError(t, res)
@@ -288,7 +289,7 @@ format: binary
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage(testMsgBlob))
+	msgs, res := proc.Process(t.Context(), service.NewMessage(testMsgBlob))
 	require.NoError(t, res)
 	require.Len(t, msgs, len(exp))
 
@@ -314,7 +315,7 @@ format: csv
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage([]byte(
+	msgs, res := proc.Process(t.Context(), service.NewMessage([]byte(
 		`id,name,color
 1,foo,blue
 2,bar,green
@@ -345,7 +346,7 @@ format: csv:|
 	proc, err := newUnarchiveFromParsed(conf, service.MockResources())
 	require.NoError(t, err)
 
-	msgs, res := proc.Process(context.Background(), service.NewMessage([]byte(
+	msgs, res := proc.Process(t.Context(), service.NewMessage([]byte(
 		`id|name|color
 1|foo|blue
 2|bar|green

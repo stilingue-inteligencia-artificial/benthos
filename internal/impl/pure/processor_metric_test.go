@@ -1,16 +1,17 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestMetricBad(t *testing.T) {
@@ -74,7 +75,7 @@ metric:
 	}
 
 	for _, i := range inputs {
-		msg, res := proc.ProcessBatch(context.Background(), message.QuickBatch(i))
+		msg, res := proc.ProcessBatch(t.Context(), message.QuickBatch(i))
 		assert.Len(t, msg, 1)
 		assert.NoError(t, res)
 	}
@@ -126,7 +127,7 @@ metric:
 	}
 
 	for _, i := range inputs {
-		msg, res := proc.ProcessBatch(context.Background(), message.QuickBatch(i))
+		msg, res := proc.ProcessBatch(t.Context(), message.QuickBatch(i))
 		assert.Len(t, msg, 1)
 		assert.NoError(t, res)
 	}
@@ -178,7 +179,7 @@ metric:
 	}
 
 	for _, i := range inputs {
-		msg, res := proc.ProcessBatch(context.Background(), message.QuickBatch(i))
+		msg, res := proc.ProcessBatch(t.Context(), message.QuickBatch(i))
 		assert.Len(t, msg, 1)
 		assert.NoError(t, res)
 	}
@@ -226,7 +227,7 @@ metric:
 	}
 
 	for _, i := range inputs {
-		msg, res := proc.ProcessBatch(context.Background(), message.QuickBatch(i))
+		msg, res := proc.ProcessBatch(t.Context(), message.QuickBatch(i))
 		assert.Len(t, msg, 1)
 		assert.NoError(t, res)
 	}

@@ -1,12 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bundle
 
 import (
 	"fmt"
 	"sort"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 // AllRateLimits is a set containing every single ratelimit that has been imported.
@@ -95,4 +97,39 @@ func (s *RateLimitSet) DocsFor(name string) (docs.ComponentSpec, bool) {
 		return docs.ComponentSpec{}, false
 	}
 	return c.spec, true
+}
+
+// Without creates a clone of the set excluding a variadic list of components.
+func (s *RateLimitSet) Without(names ...string) *RateLimitSet {
+	newSet := &RateLimitSet{
+		specs: map[string]rateLimitSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			continue
+		}
+		newSet.specs[k] = v
+	}
+	return newSet
+}
+
+// With creates a clone of the set including a variadic list of components.
+func (s *RateLimitSet) With(names ...string) *RateLimitSet {
+	newSet := &RateLimitSet{
+		specs: map[string]rateLimitSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			newSet.specs[k] = v
+		}
+	}
+	return newSet
 }

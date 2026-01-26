@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -8,8 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func fileCacheConfig() *service.ConfigSpec {
@@ -24,7 +26,7 @@ func fileCacheConfig() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterCache(
+	service.MustRegisterCache(
 		"file", fileCacheConfig(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.Cache, error) {
 			f, err := newFileCacheFromConfig(conf, mgr)
@@ -33,9 +35,6 @@ func init() {
 			}
 			return f, nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func newFileCacheFromConfig(conf *service.ParsedConfig, mgr *service.Resources) (*fileCache, error) {

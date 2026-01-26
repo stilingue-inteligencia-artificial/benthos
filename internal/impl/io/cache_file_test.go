@@ -1,26 +1,23 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
-	"context"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestFileCache(t *testing.T) {
-	dir, err := os.MkdirTemp("", "benthos_file_cache_test")
-	require.NoError(t, err)
+	dir := t.TempDir()
 
-	defer os.RemoveAll(dir)
-
-	tCtx := context.Background()
+	tCtx := t.Context()
 	c := newFileCache(dir, service.MockResources())
 
-	_, err = c.Get(tCtx, "foo")
+	_, err := c.Get(tCtx, "foo")
 	assert.Equal(t, service.ErrKeyNotFound, err)
 
 	require.NoError(t, c.Set(tCtx, "foo", []byte("1"), nil))

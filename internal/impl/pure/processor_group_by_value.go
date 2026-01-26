@@ -1,16 +1,18 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/field"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -18,17 +20,17 @@ const (
 )
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"group_by_value", service.NewConfigSpec().
 			Categories("Composition").
 			Stable().
-			Summary(`Splits a batch of messages into N batches, where each resulting batch contains a group of messages determined by a [function interpolated string](/docs/configuration/interpolation#bloblang-queries) evaluated per message.`).
+			Summary(`Splits a batch of messages into N batches, where each resulting batch contains a group of messages determined by a xref:configuration:interpolation.adoc#bloblang-queries[function interpolated string] evaluated per message.`).
 			Description(`
 This allows you to group messages using arbitrary fields within their content or metadata, process them individually, and send them to unique locations as per their group.
 
-The functionality of this processor depends on being applied across messages that are batched. You can find out more about batching [in this doc](/docs/configuration/batching).`).
+The functionality of this processor depends on being applied across messages that are batched. You can find out more about batching xref:configuration:batching.adoc[in this doc].`).
 			Footnotes(`
-## Examples
+== Examples
 
 If we were consuming Kafka messages and needed to group them by their key, archive the groups, and send them to S3 with the key as part of the path we could achieve that with the following:
 
@@ -62,9 +64,6 @@ output:
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedBatchedProcessor("group_by_value", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type groupByValueProc struct {

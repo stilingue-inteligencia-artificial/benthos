@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -12,17 +14,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
-func newSwitch(t testing.TB, mockOutputs []*mock.OutputChanneled, confStr string, args ...any) *switchOutput {
+func newSwitch(t testing.TB, mockOutputs []*mock.OutputChanneled, confStr string) *switchOutput {
 	t.Helper()
 
 	mgr := mock.NewManager()
 
-	pConf, err := switchOutputSpec().ParseYAML(fmt.Sprintf(confStr, args...), nil)
+	pConf, err := switchOutputSpec().ParseYAML(confStr, nil)
 	require.NoError(t, err)
 
 	s, err := switchOutputFromParsed(pConf, mgr)
@@ -38,7 +41,7 @@ func newSwitch(t testing.TB, mockOutputs []*mock.OutputChanneled, confStr string
 }
 
 func TestSwitchNoConditions(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nOutputs, nMsgs := 10, 1000
@@ -62,6 +65,8 @@ cases:`
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	for i := 0; i < nMsgs; i++ {
 		content := [][]byte{[]byte(fmt.Sprintf("hello world %v", i))}
@@ -98,7 +103,7 @@ cases:`
 }
 
 func TestSwitchNoRetries(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nOutputs, nMsgs := 10, 1000
@@ -123,6 +128,8 @@ cases:`
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	for i := 0; i < nMsgs; i++ {
 		content := [][]byte{[]byte(fmt.Sprintf("hello world %v", i))}
@@ -165,13 +172,13 @@ cases:`
 }
 
 func TestSwitchBatchNoRetries(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	confStr := `
 retry_until_success: false
 cases:
-  - check: 'root = this.id %% 2 == 0'
+  - check: 'root = this.id % 2 == 0'
     output:
       drop: {}
   - check: 'root = true'
@@ -184,6 +191,8 @@ cases:
 	readChan := make(chan message.Transaction)
 	resChan := make(chan error)
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	msg := message.QuickBatch([][]byte{
 		[]byte(`{"content":"hello world","id":0}`),
@@ -233,7 +242,7 @@ cases:
 }
 
 func TestSwitchBatchNoRetriesBatchErr(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	confStr := `
@@ -255,6 +264,8 @@ cases:
 	readChan := make(chan message.Transaction)
 	resChan := make(chan error, 1)
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	msg := message.QuickBatch([][]byte{
 		[]byte("hello world 0"),
@@ -324,7 +335,7 @@ cases:
 }
 
 func TestSwitchWithConditions(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nMsgs := 100
@@ -347,6 +358,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -426,7 +439,7 @@ cases:
 }
 
 func TestSwitchError(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}, {}}
@@ -448,6 +461,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	msg := message.QuickBatch([][]byte{
 		[]byte(`{"foo":"bar"}`),
@@ -496,7 +511,7 @@ cases:
 }
 
 func TestSwitchBatchSplit(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}, {}}
@@ -518,6 +533,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	msg := message.QuickBatch([][]byte{
 		[]byte(`{"foo":"bar"}`),
@@ -563,7 +580,7 @@ cases:
 }
 
 func TestSwitchBatchGroup(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}, {}}
@@ -585,6 +602,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	msg := message.QuickBatch([][]byte{
 		[]byte(`{"foo":"baz"}`),
@@ -635,7 +654,7 @@ cases:
 }
 
 func TestSwitchNoMatch(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}, {}}
@@ -658,6 +677,8 @@ cases:
 
 	require.NoError(t, s.Consume(readChan))
 
+	s.TriggerStartConsuming()
+
 	msg := message.QuickBatch([][]byte{[]byte(`{"foo":"qux"}`)})
 	select {
 	case readChan <- message.NewTransaction(msg, resChan):
@@ -677,7 +698,7 @@ cases:
 }
 
 func TestSwitchNoMatchStrict(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}, {}}
@@ -701,6 +722,8 @@ cases:
 
 	require.NoError(t, s.Consume(readChan))
 
+	s.TriggerStartConsuming()
+
 	msg := message.QuickBatch([][]byte{[]byte(`{"foo":"qux"}`)})
 	select {
 	case readChan <- message.NewTransaction(msg, resChan):
@@ -720,7 +743,7 @@ cases:
 }
 
 func TestSwitchWithConditionsNoFallthrough(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nMsgs := 100
@@ -744,6 +767,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -822,7 +847,7 @@ cases:
 }
 
 func TestSwitchShutDownFromErrorResponse(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}}
@@ -841,6 +866,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	select {
 	case readChan <- message.NewTransaction(message.QuickBatch([][]byte{[]byte("foo")}), resChan):
@@ -876,7 +903,7 @@ cases:
 }
 
 func TestSwitchShutDownFromReceive(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}}
@@ -895,6 +922,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	select {
 	case readChan <- message.NewTransaction(message.QuickBatch([][]byte{[]byte("foo")}), resChan):
@@ -921,7 +950,7 @@ cases:
 }
 
 func TestSwitchShutDownFromSend(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOutputs := []*mock.OutputChanneled{{}, {}}
@@ -941,6 +970,8 @@ cases:
 
 	require.NoError(t, s.Consume(readChan))
 
+	s.TriggerStartConsuming()
+
 	select {
 	case readChan <- message.NewTransaction(message.QuickBatch([][]byte{[]byte("foo")}), resChan):
 	case <-time.After(time.Second):
@@ -959,7 +990,7 @@ cases:
 }
 
 func TestSwitchBackPressure(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	t.Parallel()
@@ -980,6 +1011,8 @@ cases:
 	resChan := make(chan error, 1)
 
 	require.NoError(t, s.Consume(readChan))
+
+	s.TriggerStartConsuming()
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -1013,4 +1046,124 @@ bpLoop:
 	close(readChan)
 	close(doneChan)
 	wg.Wait()
+}
+
+type mockMetricsExporterType struct {
+	labels map[string][]string
+}
+
+func (m *mockMetricsExporterType) Timing(delta int64) {}
+
+func (m *mockMetricsExporterType) Set(value int64) {}
+
+func (m *mockMetricsExporterType) Incr(count int64) {}
+
+type mockMetricsExporter struct {
+	exporters []mockMetricsExporterType
+	lock      *sync.Mutex
+}
+
+func (m *mockMetricsExporter) Close(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockMetricsExporter) NewCounterCtor(name string, labelKeys ...string) service.MetricsExporterCounterCtor {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	exporter := mockMetricsExporterType{
+		labels: make(map[string][]string),
+	}
+	m.exporters = append(m.exporters, exporter)
+
+	return func(labelValues ...string) service.MetricsExporterCounter {
+		exporter.labels[name] = labelValues
+		return &exporter
+	}
+}
+
+func (m *mockMetricsExporter) NewGaugeCtor(name string, labelKeys ...string) service.MetricsExporterGaugeCtor {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	exporter := mockMetricsExporterType{
+		labels: make(map[string][]string),
+	}
+	m.exporters = append(m.exporters, exporter)
+
+	return func(labelValues ...string) service.MetricsExporterGauge {
+		exporter.labels[name] = labelValues
+		return &exporter
+	}
+}
+
+func (m *mockMetricsExporter) NewTimerCtor(name string, labelKeys ...string) service.MetricsExporterTimerCtor {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	exporter := mockMetricsExporterType{
+		labels: make(map[string][]string),
+	}
+	m.exporters = append(m.exporters, exporter)
+
+	return func(labelValues ...string) service.MetricsExporterTimer {
+		exporter.labels[name] = labelValues
+		return &exporter
+	}
+}
+
+func TestSwitchMetricsLabels(t *testing.T) {
+	metricsExporter := &mockMetricsExporter{
+		lock: &sync.Mutex{},
+	}
+
+	env := service.NewEnvironment()
+
+	require.NoError(t, env.RegisterMetricsExporter(
+		"meow", service.NewConfigSpec(),
+		func(conf *service.ParsedConfig, log *service.Logger) (service.MetricsExporter, error) {
+			return metricsExporter, nil
+		}))
+
+	builder := env.NewStreamBuilder()
+	require.NoError(t, builder.SetYAML(`
+input:
+  generate:
+    count: 2
+    interval: 0s
+    mapping: root.foo = counter()
+
+output:
+  switch:
+    cases:
+      - check: json("foo") == 1
+        output:
+          drop: {}
+      - check: json("foo") == 2
+        output:
+          drop: {}
+
+metrics:
+  meow: {}
+`))
+
+	strm, err := builder.Build()
+	require.NoError(t, err)
+
+	ctx, done := context.WithTimeout(t.Context(), 1*time.Second)
+	defer done()
+
+	require.NoError(t, strm.Run(ctx))
+
+	metricsExporter.lock.Lock()
+	defer metricsExporter.lock.Unlock()
+
+	var labels []string
+	for _, exporter := range metricsExporter.exporters {
+		for _, l := range exporter.labels {
+			labels = append(labels, l...)
+		}
+	}
+
+	assert.Subset(t, labels, []string{"root.output.switch.cases.0.output", "root.output.switch.cases.1.output"})
 }

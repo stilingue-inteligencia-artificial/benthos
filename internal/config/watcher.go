@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 //go:build !wasm
 
 package config
@@ -7,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
 
 	"github.com/fsnotify/fsnotify"
 )

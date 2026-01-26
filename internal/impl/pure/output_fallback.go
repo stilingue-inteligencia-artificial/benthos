@@ -1,21 +1,24 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"fallback", service.NewConfigSpec().
 			Stable().
 			Categories("Utility").
@@ -41,11 +44,11 @@ output:
         path: /usr/local/benthos/everything_failed.jsonl
 `+"```"+`
 
-### Metadata
+== Metadata
 
 When a given output fails the message routed to the following output will have a metadata value named `+"`fallback_error`"+` containing a string error message outlining the cause of the failure. The content of this string will depend on the particular output and can be used to enrich the message or provide information used to broker the data to an appropriate output using something like a `+"`switch`"+` output.
 
-### Batching
+== Batching
 
 When an output within a fallback sequence uses batching, like so:
 
@@ -64,7 +67,7 @@ output:
         path: /usr/local/benthos/failed_stuff.jsonl
 `+"```"+`
 
-Benthos makes a best attempt at inferring which specific messages of the batch failed, and only propagates those individual messages to the next fallback tier.
+Redpanda Connect makes a best attempt at inferring which specific messages of the batch failed, and only propagates those individual messages to the next fallback tier.
 
 However, depending on the output and the error returned it is sometimes not possible to determine the individual messages that failed, in which case the whole batch is passed to the next tier in order to preserve at-least-once delivery guarantees.`).
 			Field(service.NewOutputListField("").Default([]any{})),
@@ -77,9 +80,6 @@ However, depending on the output and the error returned it is sometimes not poss
 			out = interop.NewUnwrapInternalOutput(w)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -111,7 +111,8 @@ type fallbackBroker struct {
 	outputTSChans []chan message.Transaction
 	outputs       []output.Streamed
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newFallbackBroker(outputs []output.Streamed) (*fallbackBroker, error) {
@@ -141,30 +142,36 @@ func (t *fallbackBroker) Consume(ts <-chan message.Transaction) error {
 		return component.ErrAlreadyStarted
 	}
 	t.transactions = ts
-
-	go t.loop()
 	return nil
 }
 
-// Connected returns a boolean indicating whether this output is currently
-// connected to its target.
-func (t *fallbackBroker) Connected() bool {
+func (t *fallbackBroker) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
 	for _, out := range t.outputs {
-		if !out.Connected() {
-			return false
-		}
+		s = append(s, out.ConnectionTest(ctx)...)
 	}
-	return true
+	return
+}
+
+func (t *fallbackBroker) ConnectionStatus() (s component.ConnectionStatuses) {
+	for _, out := range t.outputs {
+		s = append(s, out.ConnectionStatus()...)
+	}
+	return
 }
 
 //------------------------------------------------------------------------------
 
 // loop is an internal loop that brokers incoming messages to many outputs.
 func (t *fallbackBroker) loop() {
+	var lock sync.RWMutex
 	defer func() {
-		for _, c := range t.outputTSChans {
-			close(c)
+		lock.Lock()
+		for i := range t.outputTSChans {
+			close(t.outputTSChans[i])
+			t.outputTSChans[i] = nil
 		}
+		lock.Unlock()
+
 		_ = closeAllOutputs(context.Background(), t.outputs)
 		t.shutSig.TriggerHasStopped()
 	}()
@@ -231,11 +238,16 @@ func (t *fallbackBroker) loop() {
 				return tran.Ack(ctx, err)
 			}
 
+			lock.RLock()
+			defer lock.RUnlock()
 			select {
+			case <-t.shutSig.SoftStopChan():
+				return nil
 			case t.outputTSChans[i] <- message.NewTransactionFunc(nextBatchFromErr(err), ackFn):
 			case <-ctx.Done():
 				return ctx.Err()
 			}
+
 			return nil
 		}
 
@@ -245,6 +257,15 @@ func (t *fallbackBroker) loop() {
 			return
 		}
 	}
+}
+
+func (t *fallbackBroker) TriggerStartConsuming() {
+	t.startOnce.Do(func() {
+		for _, out := range t.outputs {
+			out.TriggerStartConsuming()
+		}
+		go t.loop()
+	})
 }
 
 func (t *fallbackBroker) TriggerCloseNow() {

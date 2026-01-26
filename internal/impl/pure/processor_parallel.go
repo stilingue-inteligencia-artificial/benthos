@@ -1,13 +1,15 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -16,15 +18,15 @@ const (
 )
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"parallel", service.NewConfigSpec().
 			Categories("Composition").
 			Stable().
-			Summary(`A processor that applies a list of child processors to messages of a batch as though they were each a batch of one message (similar to the `+"[`for_each`](/docs/components/processors/for_each)"+` processor), but where each message is processed in parallel.`).
+			Summary(`A processor that applies a list of child processors to messages of a batch as though they were each a batch of one message (similar to the `+"xref:components:processors/for_each.adoc[`for_each`]"+` processor), but where each message is processed in parallel.`).
 			Description(`
 The field `+"`cap`"+`, if greater than zero, caps the maximum number of parallel processing threads.
 
-The functionality of this processor depends on being applied across messages that are batched. You can find out more about batching [in this doc](/docs/configuration/batching).`).
+The functionality of this processor depends on being applied across messages that are batched. You can find out more about batching in xref:configuration:batching.adoc[].`).
 			Fields(
 				service.NewIntField(parProcFieldCap).
 					Description("The maximum number of messages to have processing at a given time.").
@@ -51,9 +53,6 @@ The functionality of this processor depends on being applied across messages tha
 
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedBatchedProcessor("parallel", &p, interop.UnwrapManagement(mgr))), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type parallelProc struct {
@@ -68,16 +67,16 @@ func (p *parallelProc) ProcessBatch(ctx *processor.BatchProcContext, msg message
 		return nil
 	})
 
-	max := p.cap
-	if max == 0 || msg.Len() < max {
-		max = msg.Len()
+	maxV := p.cap
+	if maxV == 0 || msg.Len() < maxV {
+		maxV = msg.Len()
 	}
 
 	reqChan := make(chan int)
 	wg := sync.WaitGroup{}
-	wg.Add(max)
+	wg.Add(maxV)
 
-	for i := 0; i < max; i++ {
+	for i := 0; i < maxV; i++ {
 		go func() {
 			defer wg.Done()
 

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service_test
 
 import (
@@ -8,10 +10,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/lang"
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func BenchmarkStreamPipelines(b *testing.B) {
@@ -438,7 +439,7 @@ output:
 				strm, err := builder.Build()
 				require.NoError(b, err)
 
-				ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+				ctx, done := context.WithTimeout(b.Context(), time.Second*30)
 				defer done()
 
 				b.ReportAllocs()

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracing
 
 import (
@@ -6,8 +8,9 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type tracedOutput struct {
@@ -67,8 +70,16 @@ func (t *tracedOutput) Consume(inChan <-chan message.Transaction) error {
 	return t.wrapped.Consume(t.tChan)
 }
 
-func (t *tracedOutput) Connected() bool {
-	return t.wrapped.Connected()
+func (t *tracedOutput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return t.wrapped.ConnectionTest(ctx)
+}
+
+func (t *tracedOutput) ConnectionStatus() component.ConnectionStatuses {
+	return t.wrapped.ConnectionStatus()
+}
+
+func (t *tracedOutput) TriggerStartConsuming() {
+	t.wrapped.TriggerStartConsuming()
 }
 
 func (t *tracedOutput) TriggerCloseNow() {

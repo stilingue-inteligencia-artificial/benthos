@@ -1,9 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"fmt"
+	"log/slog"
 
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 )
 
 // Logger allows plugin authors to write custom logs from components that are
@@ -15,6 +18,14 @@ type Logger struct {
 
 func newReverseAirGapLogger(l log.Modular) *Logger {
 	return &Logger{l}
+}
+
+// NewLoggerFromSlog creates a customer logger via Go's standard logging
+// interface, allowing you to replace a default Benthos logger with your own.
+func NewLoggerFromSlog(l *slog.Logger) *Logger {
+	return &Logger{
+		m: log.NewBenthosLogAdapter(l),
+	}
 }
 
 // Tracef logs a trace message using fmt.Sprintf when args are specified.

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package batcher_test
 
 import (
@@ -10,17 +12,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ibatch "github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/batch/policy/batchconfig"
-	"github.com/benthosdev/benthos/v4/internal/component/input/batcher"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	ibatch "github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy/batchconfig"
+	"github.com/redpanda-data/benthos/v4/internal/component/input/batcher"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestBatcherStandard(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	mockInput := &mock.Input{
@@ -36,6 +38,7 @@ func TestBatcherStandard(t *testing.T) {
 	}
 
 	batcher := batcher.New(batchPol, mockInput, log.Noop())
+	batcher.TriggerStartConsuming()
 
 	testMsgs := []string{}
 	testResChans := []chan error{}
@@ -163,7 +166,7 @@ func TestBatcherStandard(t *testing.T) {
 }
 
 func TestBatcherErrorTracking(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	mockInput := &mock.Input{
@@ -184,6 +187,8 @@ func TestBatcherErrorTracking(t *testing.T) {
 		testMsgs = append(testMsgs, fmt.Sprintf("test%v", i))
 		testResChans = append(testResChans, make(chan error))
 	}
+
+	batcher.TriggerStartConsuming()
 
 	resErrs := []error{}
 	doneReadsChan := make(chan struct{})
@@ -230,7 +235,7 @@ func TestBatcherErrorTracking(t *testing.T) {
 }
 
 func TestBatcherTiming(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	mockInput := &mock.Input{
@@ -247,6 +252,7 @@ func TestBatcherTiming(t *testing.T) {
 	}
 
 	batcher := batcher.New(batchPol, mockInput, log.Noop())
+	batcher.TriggerStartConsuming()
 
 	resChan := make(chan error)
 	select {
@@ -317,7 +323,7 @@ func TestBatcherTiming(t *testing.T) {
 }
 
 func TestBatcherFinalFlush(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	mockInput := &mock.Input{
@@ -331,6 +337,8 @@ func TestBatcherFinalFlush(t *testing.T) {
 	require.NoError(t, err)
 
 	batcher := batcher.New(batchPol, mockInput, log.Noop())
+
+	batcher.TriggerStartConsuming()
 
 	resChan := make(chan error, 1)
 	select {

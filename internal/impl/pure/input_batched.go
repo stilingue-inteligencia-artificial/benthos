@@ -1,8 +1,10 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func batchedInputConfig() *service.ConfigSpec {
@@ -18,7 +20,7 @@ func batchedInputConfig() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterBatchInput(
+	service.MustRegisterBatchInput(
 		"batched", batchedInputConfig(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 			child, err := conf.FieldInput("child")
@@ -40,7 +42,4 @@ func init() {
 			sChild := interop.UnwrapOwnedInput(child)
 			return interop.NewUnwrapInternalInput(sChild), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
@@ -7,13 +9,12 @@ import (
 
 	"github.com/Jeffail/gabs/v2"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 var _ = registerMethod(
-	NewMethodSpec(
-		"apply",
-		"Apply a declared mapping to a target value.",
+	NewMethodSpec("apply", "Apply a declared mapping to a target value.").InCategory(
+		MethodCategoryGeneral, "",
 		NewExampleSpec("",
 			`map thing {
   root.inner = this.first
@@ -78,6 +79,33 @@ func applyMethod(target Function, args *ParsedParams) (Function, error) {
 
 //------------------------------------------------------------------------------
 
+var _ = registerSimpleMethod(
+	NewMethodSpec(
+		"array", "",
+	).InCategory(
+		MethodCategoryCoercion,
+		"Return an array containing the target value. If the value is already an array it is unchanged.",
+		NewExampleSpec("",
+			`root.my_array = this.name.array()`,
+			`{"name":"foobar bazson"}`,
+			`{"my_array":["foobar bazson"]}`,
+		),
+	),
+	func(*ParsedParams) (simpleMethod, error) {
+		return func(v any, ctx FunctionContext) (any, error) {
+			switch v.(type) {
+			case []any:
+				return v, nil
+			}
+			arr := make([]any, 1)
+			arr[0] = v
+			return arr, nil
+		}, nil
+	},
+)
+
+//------------------------------------------------------------------------------
+
 var _ = registerMethod(
 	NewMethodSpec("bool", "").InCategory(
 		MethodCategoryCoercion,
@@ -117,9 +145,8 @@ func boolMethod(target Function, args *ParsedParams) (Function, error) {
 //------------------------------------------------------------------------------
 
 var _ = registerMethod(
-	NewMethodSpec(
-		"catch",
-		"If the result of a target query fails (due to incorrect types, failed parsing, etc) the argument is returned instead.",
+	NewMethodSpec("catch", "If the result of a target query fails (due to incorrect types, failed parsing, etc) the argument is returned instead.").InCategory(
+		MethodCategoryGeneral, "",
 		NewExampleSpec("",
 			`root.doc.id = this.thing.id.string().catch(uuid_v4())`,
 		),
@@ -156,9 +183,8 @@ func catchMethod(fn Function, args *ParsedParams) (Function, error) {
 //------------------------------------------------------------------------------
 
 var _ = registerMethod(
-	NewMethodSpec(
-		"from",
-		"Modifies a target query such that certain functions are executed from the perspective of another message in the batch. This allows you to mutate events based on the contents of other messages. Functions that support this behaviour are `content`, `json` and `meta`.",
+	NewMethodSpec("from", "Modifies a target query such that certain functions are executed from the perspective of another message in the batch. This allows you to mutate events based on the contents of other messages. Functions that support this behavior are `content`, `json` and `meta`.").InCategory(
+		MethodCategoryGeneral, "",
 		NewExampleSpec("For example, the following map extracts the contents of the JSON field `foo` specifically from message index `1` of a batch, effectively overriding the field `foo` for all messages of a batch to that of message 1:",
 			`root = this
 root.foo = json("foo").from(1)`,
@@ -198,9 +224,8 @@ func (f *fromMethod) QueryTargets(ctx TargetsContext) (TargetsContext, []TargetP
 //------------------------------------------------------------------------------
 
 var _ = registerMethod(
-	NewMethodSpec(
-		"from_all",
-		"Modifies a target query such that certain functions are executed from the perspective of each message in the batch, and returns the set of results as an array. Functions that support this behaviour are `content`, `json` and `meta`.",
+	NewMethodSpec("from_all", "Modifies a target query such that certain functions are executed from the perspective of each message in the batch, and returns the set of results as an array. Functions that support this behavior are `content`, `json` and `meta`.").InCategory(
+		MethodCategoryGeneral, "",
 		NewExampleSpec("",
 			`root = this
 root.foo_summed = json("foo").from_all().sum()`,
@@ -229,7 +254,7 @@ func fromAllMethod(target Function, _ *ParsedParams) (Function, error) {
 var _ = registerMethod(
 	NewMethodSpec(
 		"get",
-		"Extract a field value, identified via a [dot path][field_paths], from an object.",
+		"Extract a field value, identified via a xref:configuration:field_paths.adoc[dot path], from an object.",
 	).InCategory(
 		MethodCategoryObjectAndArray, "",
 		NewExampleSpec("",
@@ -239,7 +264,7 @@ var _ = registerMethod(
 			`{"foo":{"bar":"from bar","baz":"from baz"},"target":"baz"}`,
 			`{"result":"from baz"}`,
 		),
-	).Param(ParamString("path", "A [dot path][field_paths] identifying a field to obtain.")),
+	).Param(ParamString("path", "A xref:configuration:field_paths.adoc[dot path] identifying a field to obtain.")),
 	getMethodCtor,
 )
 
@@ -305,8 +330,9 @@ func getMethodCtor(target Function, args *ParsedParams) (Function, error) {
 //------------------------------------------------------------------------------
 
 var _ = registerMethod(
-	NewHiddenMethodSpec("map").
-		Param(ParamQuery("query", "A query to execute on the target.", false)),
+	NewMethodSpec("map", "Executes a query on the target value, allowing you to transform or extract data from the current context.").InCategory(
+		MethodCategoryGeneral, "",
+	).Param(ParamQuery("query", "A query to execute on the target.", false)),
 	mapMethod,
 )
 
@@ -337,7 +363,12 @@ func mapMethod(target Function, args *ParsedParams) (Function, error) {
 
 //------------------------------------------------------------------------------
 
-var _ = registerMethod(NewHiddenMethodSpec("not"), notMethodCtor)
+var _ = registerMethod(
+	NewMethodSpec("not", "Returns the logical NOT (negation) of a boolean value. Converts true to false and false to true.").InCategory(
+		MethodCategoryGeneral, "",
+	),
+	notMethodCtor,
+)
 
 type notMethod struct {
 	fn Function
@@ -444,7 +475,47 @@ func numberCoerceMethod(target Function, args *ParsedParams) (Function, error) {
 
 var _ = registerMethod(
 	NewMethodSpec(
-		"or", "If the result of the target query fails or resolves to `null`, returns the argument instead. This is an explicit method alternative to the coalesce pipe operator `|`.",
+		"timestamp", "",
+	).InCategory(
+		MethodCategoryCoercion,
+		"Attempt to parse a value into a timestamp. An optional argument can be provided, in which case if the value cannot be parsed into a timestamp the argument will be returned instead.",
+		NewExampleSpec("",
+			`root.foo = this.ts.timestamp()
+root.bar = this.none.timestamp(1234567890.timestamp())`,
+		),
+	).Param(ParamTimestamp("default", "An optional value to yield if the target cannot be parsed as a timestamp.").Optional()),
+	timestampCoerceMethod,
+)
+
+func timestampCoerceMethod(target Function, args *ParsedParams) (Function, error) {
+	defaultTS, err := args.FieldOptionalTimestamp("default")
+	if err != nil {
+		return nil, err
+	}
+	return ClosureFunction("method timestamp", func(ctx FunctionContext) (any, error) {
+		v, err := target.Exec(ctx)
+		if err != nil {
+			if defaultTS != nil {
+				return *defaultTS, nil
+			}
+			return nil, err
+		}
+		f, err := value.IGetTimestamp(v)
+		if err != nil {
+			if defaultTS != nil {
+				return *defaultTS, nil
+			}
+			return nil, ErrFrom(err, target)
+		}
+		return f, nil
+	}, target.QueryTargets), nil
+}
+
+//------------------------------------------------------------------------------
+
+var _ = registerMethod(
+	NewMethodSpec("or", "If the result of the target query fails or resolves to `null`, returns the argument instead. This is an explicit method alternative to the coalesce pipe operator `|`.").InCategory(
+		MethodCategoryGeneral, "",
 		NewExampleSpec("", `root.doc.id = this.thing.id.or(uuid_v4())`),
 	).Param(ParamQuery("fallback", "A value to yield, or query to execute, if the target query fails or resolves to `null`.", true)),
 	orMethod,

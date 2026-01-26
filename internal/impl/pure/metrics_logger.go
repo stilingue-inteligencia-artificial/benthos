@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -9,8 +11,8 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -23,7 +25,7 @@ func loggerMetricsSpec() *service.ConfigSpec {
 		Beta().
 		Summary(`Prints aggregated metrics through the logger.`).
 		Description(`
-Prints each metric produced by Benthos as a log event (level `+"`info`"+` by default) during shutdown, and optionally on an interval.
+Prints each metric produced by Redpanda Connect as a log event (level `+"`info`"+` by default) during shutdown, and optionally on an interval.
 
 This metrics type is useful for debugging pipelines when you only have access to the logger output and not the service-wide server. Otherwise it's recommended that you use either the `+"`prometheus` or `json_api`"+`types.`).
 		Fields(
@@ -37,13 +39,10 @@ This metrics type is useful for debugging pipelines when you only have access to
 }
 
 func init() {
-	err := service.RegisterMetricsExporter("logger", loggerMetricsSpec(),
+	service.MustRegisterMetricsExporter("logger", loggerMetricsSpec(),
 		func(conf *service.ParsedConfig, log *service.Logger) (service.MetricsExporter, error) {
 			return newLoggerFromParsed(conf, log)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------

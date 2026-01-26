@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
@@ -18,8 +20,11 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
+	"hash/fnv"
 	"html"
 	"io"
+	"math"
+	"math/bits"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -27,13 +32,13 @@ import (
 	"strings"
 
 	"github.com/OneOfOne/xxhash"
-	"github.com/microcosm-cc/bluemonday"
+	"github.com/gofrs/uuid/v5"
 	"github.com/tilinna/z85"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 var _ = registerSimpleMethod(
@@ -62,11 +67,16 @@ var _ = registerSimpleMethod(
 		"capitalize", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Takes a string value and returns a copy with all Unicode letters that begin words mapped to their Unicode title case.",
+		"Converts the first letter of each word in a string to uppercase (title case). Useful for formatting names, titles, and headings.",
 		NewExampleSpec("",
 			`root.title = this.title.capitalize()`,
 			`{"title":"the foo bar"}`,
 			`{"title":"The Foo Bar"}`,
+		),
+		NewExampleSpec("",
+			`root.name = this.name.capitalize()`,
+			`{"name":"alice smith"}`,
+			`{"name":"Alice Smith"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -89,7 +99,7 @@ var _ = registerSimpleMethod(
 		"encode", "",
 	).InCategory(
 		MethodCategoryEncoding,
-		"Encodes a string or byte array target according to a chosen scheme and returns a string result. Available schemes are: `base64`, `base64url` [(RFC 4648 with padding characters)](https://rfc-editor.org/rfc/rfc4648.html), `base64rawurl` [(RFC 4648 without padding characters)](https://rfc-editor.org/rfc/rfc4648.html), `hex`, `ascii85`.",
+		"Encodes a string or byte array target according to a chosen scheme and returns a string result. Available schemes are: `base64`, `base64url` https://rfc-editor.org/rfc/rfc4648.html[(RFC 4648 with padding characters)], `base64rawurl` https://rfc-editor.org/rfc/rfc4648.html[(RFC 4648 without padding characters)], `hex`, `ascii85`.",
 		// NOTE: z85 has been removed from the list until we can support
 		// misaligned data automatically. It'll still be supported for backwards
 		// compatibility, but given it behaves differently to `ascii85` I think
@@ -195,7 +205,7 @@ var _ = registerSimpleMethod(
 		"decode", "",
 	).InCategory(
 		MethodCategoryEncoding,
-		"Decodes an encoded string target according to a chosen scheme and returns the result as a byte array. When mapping the result to a JSON field the value should be cast to a string using the method [`string`][methods.string], or encoded using the method [`encode`][methods.encode], otherwise it will be base64 encoded by default.\n\nAvailable schemes are: `base64`, `base64url` [(RFC 4648 with padding characters)](https://rfc-editor.org/rfc/rfc4648.html), `base64rawurl` [(RFC 4648 without padding characters)](https://rfc-editor.org/rfc/rfc4648.html), `hex`, `ascii85`.",
+		"Decodes an encoded string target according to a chosen scheme and returns the result as a byte array. When mapping the result to a JSON field the value should be cast to a string using the method `string`, or encoded using the method `encode`, otherwise it will be base64 encoded by default.\n\nAvailable schemes are: `base64`, `base64url` https://rfc-editor.org/rfc/rfc4648.html[(RFC 4648 with padding characters)], `base64rawurl` https://rfc-editor.org/rfc/rfc4648.html[(RFC 4648 without padding characters)], `hex`, `ascii85`.",
 		// NOTE: z85 has been removed from the list until we can support
 		// misaligned data automatically. It'll still be supported for backwards
 		// compatibility, but given it behaves differently to `ascii85` I think
@@ -281,7 +291,7 @@ var _ = registerSimpleMethod(
 		"encrypt_aes", "",
 	).InCategory(
 		MethodCategoryEncoding,
-		"Encrypts a string or byte array target according to a chosen AES encryption method and returns a string result. The algorithms require a key and an initialization vector / nonce. Available schemes are: `ctr`, `ofb`, `cbc`.",
+		"Encrypts a string or byte array target according to a chosen AES encryption method and returns a string result. The algorithms require a key and an initialization vector / nonce. Available schemes are: `ctr`, `gcm`, `ofb`, `cbc`.",
 		NewExampleSpec("",
 			`let key = "2b7e151628aed2a6abf7158809cf4f3c".decode("hex")
 let vector = "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff".decode("hex")
@@ -290,7 +300,7 @@ root.encrypted = this.value.encrypt_aes("ctr", $key, $vector).encode("hex")`,
 			`{"encrypted":"84e9b31ff7400bdf80be7254"}`,
 		),
 	).
-		Param(ParamString("scheme", "The scheme to use for encryption, one of `ctr`, `ofb`, `cbc`.")).
+		Param(ParamString("scheme", "The scheme to use for encryption, one of `ctr`, `gcm`, `ofb`, `cbc`.")).
 		Param(ParamString("key", "A key to encrypt with.")).
 		Param(ParamString("iv", "An initialization vector / nonce.")),
 	func(args *ParsedParams) (simpleMethod, error) {
@@ -312,8 +322,16 @@ root.encrypted = this.value.encrypt_aes("ctr", $key, $vector).encode("hex")`,
 			return nil, err
 		}
 		iv := []byte(ivStr)
-		if len(iv) != block.BlockSize() {
-			return nil, errors.New("the key must match the initialisation vector size")
+
+		switch schemeStr {
+		case "ctr":
+			fallthrough
+		case "ofb":
+			fallthrough
+		case "cbc":
+			if len(iv) != block.BlockSize() {
+				return nil, errors.New("the key must match the initialisation vector size")
+			}
 		}
 
 		var schemeFn func([]byte) (string, error)
@@ -325,9 +343,20 @@ root.encrypted = this.value.encrypt_aes("ctr", $key, $vector).encode("hex")`,
 				stream.XORKeyStream(ciphertext, b)
 				return string(ciphertext), nil
 			}
+		case "gcm":
+			schemeFn = func(b []byte) (string, error) {
+				ciphertext := make([]byte, 0, len(b))
+				stream, err := cipher.NewGCM(block)
+				if err != nil {
+					return "", fmt.Errorf("creating gcm failed: %w", err)
+				}
+				ciphertext = stream.Seal(ciphertext, iv, b, nil)
+				return string(ciphertext), nil
+			}
 		case "ofb":
 			schemeFn = func(b []byte) (string, error) {
 				ciphertext := make([]byte, len(b))
+				//nolint:staticcheck // SA1019: cipher.NewOFB has been deprecated since Go 1.24
 				stream := cipher.NewOFB(block, iv)
 				stream.XORKeyStream(ciphertext, b)
 				return string(ciphertext), nil
@@ -369,7 +398,7 @@ var _ = registerSimpleMethod(
 		"decrypt_aes", "",
 	).InCategory(
 		MethodCategoryEncoding,
-		"Decrypts an encrypted string or byte array target according to a chosen AES encryption method and returns the result as a byte array. The algorithms require a key and an initialization vector / nonce. Available schemes are: `ctr`, `ofb`, `cbc`.",
+		"Decrypts an encrypted string or byte array target according to a chosen AES encryption method and returns the result as a byte array. The algorithms require a key and an initialization vector / nonce. Available schemes are: `ctr`, `gcm`, `ofb`, `cbc`.",
 		NewExampleSpec("",
 			`let key = "2b7e151628aed2a6abf7158809cf4f3c".decode("hex")
 let vector = "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff".decode("hex")
@@ -378,7 +407,7 @@ root.decrypted = this.value.decode("hex").decrypt_aes("ctr", $key, $vector).stri
 			`{"decrypted":"hello world!"}`,
 		),
 	).
-		Param(ParamString("scheme", "The scheme to use for decryption, one of `ctr`, `ofb`, `cbc`.")).
+		Param(ParamString("scheme", "The scheme to use for decryption, one of `ctr`, `gcm`, `ofb`, `cbc`.")).
 		Param(ParamString("key", "A key to decrypt with.")).
 		Param(ParamString("iv", "An initialization vector / nonce.")),
 	func(args *ParsedParams) (simpleMethod, error) {
@@ -401,8 +430,15 @@ root.decrypted = this.value.decode("hex").decrypt_aes("ctr", $key, $vector).stri
 			return nil, err
 		}
 		iv := []byte(ivStr)
-		if len(iv) != block.BlockSize() {
-			return nil, errors.New("the key must match the initialisation vector size")
+		switch schemeStr {
+		case "ctr":
+			fallthrough
+		case "ofb":
+			fallthrough
+		case "cbc":
+			if len(iv) != block.BlockSize() {
+				return nil, errors.New("the key must match the initialisation vector size")
+			}
 		}
 
 		var schemeFn func([]byte) ([]byte, error)
@@ -414,9 +450,23 @@ root.decrypted = this.value.decode("hex").decrypt_aes("ctr", $key, $vector).stri
 				stream.XORKeyStream(plaintext, b)
 				return plaintext, nil
 			}
+		case "gcm":
+			schemeFn = func(b []byte) ([]byte, error) {
+				plaintext := make([]byte, 0, len(b))
+				stream, err := cipher.NewGCM(block)
+				if err != nil {
+					return nil, fmt.Errorf("creating gcm failed: %w", err)
+				}
+				plaintext, err = stream.Open(plaintext, iv, b, nil)
+				if err != nil {
+					return nil, fmt.Errorf("gcm decrypting failed: %w", err)
+				}
+				return plaintext, nil
+			}
 		case "ofb":
 			schemeFn = func(b []byte) ([]byte, error) {
 				plaintext := make([]byte, len(b))
+				//nolint:staticcheck // SA1019: cipher.NewOFB has been deprecated since Go 1.24
 				stream := cipher.NewOFB(block, iv)
 				stream.XORKeyStream(plaintext, b)
 				return plaintext, nil
@@ -456,11 +506,16 @@ var _ = registerSimpleMethod(
 		"escape_html", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Escapes a string so that special characters like `<` to become `&lt;`. It escapes only five such characters: `<`, `>`, `&`, `'` and `\"` so that it can be safely placed within an HTML entity.",
+		"Escapes special HTML characters (`<`, `>`, `&`, `'`, `\"`) to make a string safe for HTML output. Use when embedding untrusted text in HTML to prevent XSS vulnerabilities.",
 		NewExampleSpec("",
 			`root.escaped = this.value.escape_html()`,
 			`{"value":"foo & bar"}`,
 			`{"escaped":"foo &amp; bar"}`,
+		),
+		NewExampleSpec("",
+			`root.safe_html = this.user_input.escape_html()`,
+			`{"user_input":"<script>alert('xss')</script>"}`,
+			`{"safe_html":"&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -477,7 +532,7 @@ var _ = registerSimpleMethod(
 		"index_of", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Returns the starting index of the argument substring in a string target, or `-1` if the target doesn't contain the argument.",
+		"Finds the position of a substring within a string. Returns the zero-based index of the first occurrence, or -1 if not found. Useful for searching and string manipulation.",
 		NewExampleSpec("",
 			`root.index = this.thing.index_of("bar")`,
 			`{"thing":"foobar"}`,
@@ -513,11 +568,16 @@ var _ = registerSimpleMethod(
 		"unescape_html", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Unescapes a string so that entities like `&lt;` become `<`. It unescapes a larger range of entities than `escape_html` escapes. For example, `&aacute;` unescapes to `á`, as does `&#225;` and `&xE1;`.",
+		"Converts HTML entities back to their original characters. Handles named entities (`&amp;`, `&lt;`), decimal (`&#225;`), and hexadecimal (`&xE1;`) formats. Use for processing HTML content or decoding HTML-escaped data.",
 		NewExampleSpec("",
 			`root.unescaped = this.value.unescape_html()`,
 			`{"value":"foo &amp; bar"}`,
 			`{"unescaped":"foo & bar"}`,
+		),
+		NewExampleSpec("",
+			`root.text = this.html.unescape_html()`,
+			`{"html":"&lt;p&gt;Hello &amp; goodbye&lt;/p&gt;"}`,
+			`{"text":"<p>Hello & goodbye</p>"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -534,11 +594,16 @@ var _ = registerSimpleMethod(
 		"escape_url_query", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Escapes a string so that it can be safely placed within a URL query.",
+		"Encodes a string for safe use in URL query parameters. Converts spaces to `+` and special characters to percent-encoded values. Use when building URLs with dynamic query parameters.",
 		NewExampleSpec("",
 			`root.escaped = this.value.escape_url_query()`,
 			`{"value":"foo & bar"}`,
 			`{"escaped":"foo+%26+bar"}`,
+		),
+		NewExampleSpec("",
+			`root.url = "https://example.com?search=" + this.query.escape_url_query()`,
+			`{"query":"hello world!"}`,
+			`{"url":"https://example.com?search=hello+world%21"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -555,11 +620,16 @@ var _ = registerSimpleMethod(
 		"unescape_url_query", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Expands escape sequences from a URL query string.",
+		"Decodes URL query parameter encoding, converting `+` to spaces and percent-encoded characters to their original values. Use for parsing URL query parameters.",
 		NewExampleSpec("",
 			`root.unescaped = this.value.unescape_url_query()`,
 			`{"value":"foo+%26+bar"}`,
 			`{"unescaped":"foo & bar"}`,
+		),
+		NewExampleSpec("",
+			`root.search = this.param.unescape_url_query()`,
+			`{"param":"hello+world%21"}`,
+			`{"search":"hello world!"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -576,7 +646,7 @@ var _ = registerSimpleMethod(
 		"filepath_join", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Joins an array of path elements into a single file path. The separator depends on the operating system of the machine.",
+		"Combines an array of path components into a single OS-specific file path using the correct separator (`/` on Unix, `\\` on Windows). Use for constructing file paths from components.",
 		NewExampleSpec("",
 			`root.path = this.path_elements.filepath_join()`,
 			strings.ReplaceAll(`{"path_elements":["/foo/","bar.txt"]}`, "/", string(filepath.Separator)),
@@ -607,7 +677,7 @@ var _ = registerSimpleMethod(
 		"filepath_split", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Splits a file path immediately following the final Separator, separating it into a directory and file name component returned as a two element array of strings. If there is no Separator in the path, the first element will be empty and the second will contain the path. The separator depends on the operating system of the machine.",
+		"Separates a file path into directory and filename components, returning a two-element array `[directory, filename]`. Use for extracting the filename or directory from a full path.",
 		NewExampleSpec("",
 			`root.path_sep = this.path.filepath_split()`,
 			strings.ReplaceAll(`{"path":"/foo/bar.txt"}`, "/", string(filepath.Separator)),
@@ -631,11 +701,16 @@ var _ = registerSimpleMethod(
 		"format", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Use a value string as a format specifier in order to produce a new string, using any number of provided arguments. Please refer to the Go [`fmt` package documentation](https://pkg.go.dev/fmt) for the list of valid format verbs.",
+		"Formats a string using Go's printf-style formatting with the string as the format template. Supports all Go format verbs (`%s`, `%d`, `%v`, etc.). Use for building formatted strings from dynamic values.",
 		NewExampleSpec("",
 			`root.foo = "%s(%v): %v".format(this.name, this.age, this.fingers)`,
 			`{"name":"lance","age":37,"fingers":13}`,
 			`{"foo":"lance(37): 13"}`,
+		),
+		NewExampleSpec("",
+			`root.message = "User %s has %v points".format(this.username, this.score)`,
+			`{"username":"alice","score":100}`,
+			`{"message":"User alice has 100 points"}`,
 		),
 	).VariadicParams(),
 	func(args *ParsedParams) (simpleMethod, error) {
@@ -652,7 +727,7 @@ var _ = registerSimpleMethod(
 		"has_prefix", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Checks whether a string has a prefix argument and returns a bool.",
+		"Tests if a string starts with a specified prefix. Returns `true` if the string begins with the prefix, `false` otherwise. Use for conditional logic based on string patterns.",
 		NewExampleSpec("",
 			`root.t1 = this.v1.has_prefix("foo")
 root.t2 = this.v2.has_prefix("foo")`,
@@ -685,7 +760,7 @@ var _ = registerSimpleMethod(
 		"has_suffix", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Checks whether a string has a suffix argument and returns a bool.",
+		"Tests if a string ends with a specified suffix. Returns `true` if the string ends with the suffix, `false` otherwise. Use for filtering or routing based on file extensions or string patterns.",
 		NewExampleSpec("",
 			`root.t1 = this.v1.has_suffix("foo")
 root.t2 = this.v2.has_suffix("foo")`,
@@ -719,9 +794,9 @@ var _ = registerSimpleMethod(
 	).InCategory(
 		MethodCategoryEncoding,
 		`
-Hashes a string or byte array according to a chosen algorithm and returns the result as a byte array. When mapping the result to a JSON field the value should be cast to a string using the method `+"[`string`][methods.string], or encoded using the method [`encode`][methods.encode]"+`, otherwise it will be base64 encoded by default.
+Hashes a string or byte array according to a chosen algorithm and returns the result as a byte array. When mapping the result to a JSON field the value should be cast to a string using the method `+"xref:guides:bloblang/methods.adoc#string[`string`], or encoded using the method xref:guides:bloblang/methods.adoc#encode[`encode`]"+`, otherwise it will be base64 encoded by default.
 
-Available algorithms are: `+"`hmac_sha1`, `hmac_sha256`, `hmac_sha512`, `md5`, `sha1`, `sha256`, `sha512`, `xxhash64`, `crc32`"+`.
+Available algorithms are: `+"`hmac_sha1`, `hmac_sha256`, `hmac_sha512`, `md5`, `sha1`, `sha256`, `sha512`, `xxhash64`, `crc32`, `fnv32`"+`.
 
 The following algorithms require a key, which is specified as a second argument: `+"`hmac_sha1`, `hmac_sha256`, `hmac_sha512`"+`.`,
 		NewExampleSpec("",
@@ -832,6 +907,12 @@ root.h2 = this.value.hash(algorithm: "crc32", polynomial: "Koopman").encode("hex
 				_, _ = hasher.Write(b)
 				return hasher.Sum(nil), nil
 			}
+		case "fnv32":
+			hashFn = func(b []byte) ([]byte, error) {
+				h := fnv.New32()
+				_, _ = h.Write(b)
+				return []byte(strconv.FormatUint(uint64(h.Sum32()), 10)), nil
+			}
 		default:
 			return nil, fmt.Errorf("unrecognized hash type: %v", algorithmStr)
 		}
@@ -855,10 +936,67 @@ root.h2 = this.value.hash(algorithm: "crc32", polynomial: "Koopman").encode("hex
 
 var _ = registerSimpleMethod(
 	NewMethodSpec(
+		"uuid_v5", "",
+	).InCategory(
+		MethodCategoryEncoding,
+		`
+Returns UUID version 5 for the given string.`,
+		NewExampleSpec("", `root.id = "example".uuid_v5()`, `{"id": "feb54431-301b-52bb-a6dd-e1e93e81bb9e"}`),
+		NewExampleSpec("", `root.id = "example".uuid_v5("x500")`, `{"id": "0cbd148f-768f-52fe-a1cd-0c4e6c65de91"}`),
+		NewExampleSpec("", `root.id = "example".uuid_v5("77f836b7-9f61-46c0-851e-9b6ca3535e69")`, `{"id": "a0d220eb-18f1-50ca-b888-86aa5b604edf"}`),
+	).Param(ParamString("ns", "An optional namespace name or UUID. It supports the `dns`, `url`, `oid` and `x500` predefined namespaces and any valid RFC-9562 UUID. If empty, the nil UUID will be used.").Optional()),
+	func(args *ParsedParams) (simpleMethod, error) {
+		ns, err := args.FieldOptionalString("ns")
+		if err != nil {
+			return nil, err
+		}
+
+		return func(v any, ctx FunctionContext) (any, error) {
+			if v == nil {
+				return nil, nil
+			}
+
+			var uns uuid.UUID
+			if ns == nil {
+				uns = uuid.Nil
+			} else {
+				switch *ns {
+				case "dns", "DNS":
+					uns = uuid.NamespaceDNS
+				case "url", "URL":
+					uns = uuid.NamespaceURL
+				case "oid", "OID":
+					uns = uuid.NamespaceOID
+				case "x500", "X500":
+					uns = uuid.NamespaceX500
+				default:
+					uns, err = uuid.FromString(*ns)
+					if err != nil {
+						return nil, fmt.Errorf("invalid ns uuid: %q", *ns)
+					}
+				}
+			}
+
+			switch t := v.(type) {
+			case string:
+				return uuid.NewV5(uns, t).String(), nil
+			case []byte:
+				return uuid.NewV5(uns, string(t)).String(), nil
+			}
+
+			return nil, value.NewTypeError(v, value.TString)
+		}, nil
+	},
+)
+
+//------------------------------------------------------------------------------
+
+var _ = registerSimpleMethod(
+	NewMethodSpec(
 		"join", "",
 	).InCategory(
 		MethodCategoryObjectAndArray,
-		"Join an array of strings with an optional delimiter into a single string.",
+		"Concatenates an array of strings into a single string with an optional delimiter between elements. Use for building CSV strings, URLs, or combining text fragments.",
 		NewExampleSpec("",
 			`root.joined_words = this.words.join()
 root.joined_numbers = this.numbers.map_each(this.string()).join(",")`,
@@ -907,11 +1045,16 @@ var _ = registerSimpleMethod(
 		"uppercase", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Convert a string value into uppercase.",
+		"Converts all letters in a string to uppercase. Use for case-insensitive comparisons or formatting output.",
 		NewExampleSpec("",
 			`root.foo = this.foo.uppercase()`,
 			`{"foo":"hello world"}`,
 			`{"foo":"HELLO WORLD"}`,
+		),
+		NewExampleSpec("",
+			`root.code = this.product_code.uppercase()`,
+			`{"product_code":"abc-123"}`,
+			`{"code":"ABC-123"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -935,11 +1078,16 @@ var _ = registerSimpleMethod(
 		"lowercase", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Convert a string value into lowercase.",
+		"Converts all letters in a string to lowercase. Use for case-insensitive comparisons, normalization, or formatting output.",
 		NewExampleSpec("",
 			`root.foo = this.foo.lowercase()`,
 			`{"foo":"HELLO WORLD"}`,
 			`{"foo":"hello world"}`,
+		),
+		NewExampleSpec("",
+			`root.email = this.user_email.lowercase()`,
+			`{"user_email":"User@Example.COM"}`,
+			`{"email":"user@example.com"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -1208,6 +1356,22 @@ var _ = registerSimpleMethod(
 			`{"doc":{"foo":"bar"}}`,
 			`{"foo":"bar"}`,
 		),
+		NewExampleSpec("Escapes problematic HTML characters.",
+			`root = this.doc.format_json()`,
+			`{"doc":{"email":"foo&bar@benthos.dev","name":"foo>bar"}}`,
+			`{
+    "email": "foo\u0026bar@benthos.dev",
+    "name": "foo\u003ebar"
+}`,
+		),
+		NewExampleSpec("Set the `escape_html` parameter to false to disable escaping of problematic HTML characters.",
+			`root = this.doc.format_json(escape_html: false)`,
+			`{"doc":{"email":"foo&bar@benthos.dev","name":"foo>bar"}}`,
+			`{
+    "email": "foo&bar@benthos.dev",
+    "name": "foo>bar"
+}`,
+		),
 	).
 		Beta().
 		Param(ParamString(
@@ -1217,7 +1381,11 @@ var _ = registerSimpleMethod(
 		Param(ParamBool(
 			"no_indent",
 			"Disable indentation.",
-		).Default(false)),
+		).Default(false)).
+		Param(ParamBool(
+			"escape_html",
+			"Escape problematic HTML characters.",
+		).Default(true)),
 	func(args *ParsedParams) (simpleMethod, error) {
 		indentOpt, err := args.FieldOptionalString("indent")
 		if err != nil {
@@ -1231,11 +1399,29 @@ var _ = registerSimpleMethod(
 		if err != nil {
 			return nil, err
 		}
+		escapeHTMLOpt, err := args.FieldOptionalBool("escape_html")
+		if err != nil {
+			return nil, err
+		}
 		return func(v any, ctx FunctionContext) (any, error) {
-			if *noIndentOpt {
-				return json.Marshal(v)
+			buffer := &bytes.Buffer{}
+
+			encoder := json.NewEncoder(buffer)
+			if !*noIndentOpt {
+				encoder.SetIndent("", indent)
 			}
-			return json.MarshalIndent(v, "", indent)
+			if !*escapeHTMLOpt {
+				encoder.SetEscapeHTML(false)
+			}
+
+			if err := encoder.Encode(v); err != nil {
+				return nil, err
+			}
+
+			// This hack is here because `format_json()` initially relied on `json.Marshal()` or `json.MarshalIndent()`
+			// which don't add a trailing newline to the output and, also, other `format_*` methods in bloblang don't
+			// append a trailing newline.
+			return bytes.TrimRight(buffer.Bytes(), "\n"), nil
 		}, nil
 	},
 )
@@ -1247,8 +1433,8 @@ var _ = registerSimpleMethod(
 		MethodCategoryParsing, "",
 		NewExampleSpec("",
 			`root.foo_url = this.foo_url.parse_url()`,
-			`{"foo_url":"https://www.benthos.dev/docs/guides/bloblang/about"}`,
-			`{"foo_url":{"fragment":"","host":"www.benthos.dev","opaque":"","path":"/docs/guides/bloblang/about","raw_fragment":"","raw_path":"","raw_query":"","scheme":"https"}}`,
+			`{"foo_url":"https://docs.redpanda.com/redpanda-connect/guides/bloblang/about/"}`,
+			`{"foo_url":{"fragment":"","host":"docs.redpanda.com","opaque":"","path":"/redpanda-connect/guides/bloblang/about/","raw_fragment":"","raw_path":"","raw_query":"","scheme":"https"}}`,
 		),
 		NewExampleSpec("",
 			`root.username = this.url.parse_url().user.name | "unknown"`,
@@ -1295,7 +1481,7 @@ var _ = registerSimpleMethod(
 		"reverse", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Returns the target string in reverse order.",
+		"Reverses the order of characters in a string. Unicode-aware for proper handling of multi-byte characters. Use for creating palindrome checks or reversing text data.",
 		NewExampleSpec("",
 			`root.reversed = this.thing.reverse()`,
 			`{"thing":"backwards"}`,
@@ -1336,11 +1522,16 @@ var _ = registerSimpleMethod(
 		"quote", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Quotes a target string using escape sequences (`\\t`, `\\n`, `\\xFF`, `\\u0100`) for control characters and non-printable characters.",
+		"Wraps a string in double quotes and escapes special characters (newlines, tabs, etc.) using Go escape sequences. Use for generating string literals or preparing strings for JSON-like formats.",
 		NewExampleSpec("",
 			`root.quoted = this.thing.quote()`,
 			`{"thing":"foo\nbar"}`,
 			`{"quoted":"\"foo\\nbar\""}`,
+		),
+		NewExampleSpec("",
+			`root.literal = this.text.quote()`,
+			`{"text":"hello\tworld"}`,
+			`{"literal":"\"hello\\tworld\""}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -1357,11 +1548,16 @@ var _ = registerSimpleMethod(
 		"unquote", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Unquotes a target string, expanding any escape sequences (`\\t`, `\\n`, `\\xFF`, `\\u0100`) for control characters and non-printable characters.",
+		"Removes surrounding quotes and interprets escape sequences (`\\n`, `\\t`, etc.) to their literal characters. Use for parsing quoted string literals.",
 		NewExampleSpec("",
 			`root.unquoted = this.thing.unquote()`,
 			`{"thing":"\"foo\\nbar\""}`,
 			`{"unquoted":"foo\nbar"}`,
+		),
+		NewExampleSpec("",
+			`root.text = this.literal.unquote()`,
+			`{"literal":"\"hello\\tworld\""}`,
+			`{"text":"hello\tworld"}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -1374,7 +1570,9 @@ var _ = registerSimpleMethod(
 //------------------------------------------------------------------------------
 
 var _ = registerSimpleMethod(
-	NewHiddenMethodSpec("replace").
+	NewMethodSpec("replace", "Replaces all occurrences of a substring with another string. Use for text transformation, cleaning data, or normalizing strings.").InCategory(
+		MethodCategoryStrings, "",
+	).
 		Param(ParamString("old", "A string to match against.")).
 		Param(ParamString("new", "A string to replace with.")),
 	replaceAllImpl,
@@ -1385,11 +1583,16 @@ var _ = registerSimpleMethod(
 		"replace_all", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Replaces all occurrences of the first argument in a target string with the second argument.",
+		"Replaces all occurrences of a substring with another string. Use for text transformation, cleaning data, or normalizing strings.",
 		NewExampleSpec("",
 			`root.new_value = this.value.replace_all("foo","dog")`,
 			`{"value":"The foo ate my homework"}`,
 			`{"new_value":"The dog ate my homework"}`,
+		),
+		NewExampleSpec("",
+			`root.clean = this.text.replace_all("  ", " ")`,
+			`{"text":"hello  world  foo"}`,
+			`{"clean":"hello world foo"}`,
 		),
 	).
 		Param(ParamString("old", "A string to match against.")).
@@ -1421,7 +1624,9 @@ func replaceAllImpl(args *ParsedParams) (simpleMethod, error) {
 //------------------------------------------------------------------------------
 
 var _ = registerSimpleMethod(
-	NewHiddenMethodSpec("replace_many").
+	NewMethodSpec("replace_many", "Performs multiple find-and-replace operations in sequence using an array of `[old, new]` pairs. More efficient than chaining multiple `replace_all` calls. Use for bulk text transformations.").InCategory(
+		MethodCategoryStrings, "",
+	).
 		Param(ParamArray("values", "An array of values, each even value will be replaced with the following odd value.")),
 	replaceAllManyImpl,
 )
@@ -1431,7 +1636,7 @@ var _ = registerSimpleMethod(
 		"replace_all_many", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"For each pair of strings in an argument array, replaces all occurrences of the first item of the pair with the second. This is a more compact way of chaining a series of `replace_all` methods.",
+		"Performs multiple find-and-replace operations in sequence using an array of `[old, new]` pairs. More efficient than chaining multiple `replace_all` calls. Use for bulk text transformations.",
 		NewExampleSpec("",
 			`root.new_value = this.value.replace_all_many([
   "<b>", "&lt;b&gt;",
@@ -1495,11 +1700,16 @@ var _ = registerSimpleMethod(
 		"re_find_all", "",
 	).InCategory(
 		MethodCategoryRegexp,
-		"Returns an array containing all successive matches of a regular expression in a string.",
+		"Finds all matches of a regular expression in a string and returns them as an array. Use for extracting multiple patterns or validating repeating structures.",
 		NewExampleSpec("",
 			`root.matches = this.value.re_find_all("a.")`,
 			`{"value":"paranormal"}`,
 			`{"matches":["ar","an","al"]}`,
+		),
+		NewExampleSpec("",
+			`root.numbers = this.text.re_find_all("[0-9]+")`,
+			`{"text":"I have 2 apples and 15 oranges"}`,
+			`{"numbers":["2","15"]}`,
 		),
 	).Param(ParamString("pattern", "The pattern to match against.")),
 	func(args *ParsedParams) (simpleMethod, error) {
@@ -1541,11 +1751,16 @@ var _ = registerSimpleMethod(
 		"re_find_all_submatch", "",
 	).InCategory(
 		MethodCategoryRegexp,
-		"Returns an array of arrays containing all successive matches of the regular expression in a string and the matches, if any, of its subexpressions.",
+		"Finds all regex matches and their capture groups, returning an array of arrays where each inner array contains the full match and captured subgroups. Use for extracting structured data with capture groups.",
 		NewExampleSpec("",
 			`root.matches = this.value.re_find_all_submatch("a(x*)b")`,
 			`{"value":"-axxb-ab-"}`,
 			`{"matches":[["axxb","xx"],["ab",""]]}`,
+		),
+		NewExampleSpec("",
+			`root.emails = this.text.re_find_all_submatch("(\\w+)@(\\w+\\.\\w+)")`,
+			`{"text":"Contact: alice@example.com or bob@test.org"}`,
+			`{"emails":[["alice@example.com","alice","example.com"],["bob@test.org","bob","test.org"]]}`,
 		),
 	).Param(ParamString("pattern", "The pattern to match against.")),
 	func(args *ParsedParams) (simpleMethod, error) {
@@ -1595,7 +1810,7 @@ var _ = registerSimpleMethod(
 		"re_find_object", "",
 	).InCategory(
 		MethodCategoryRegexp,
-		"Returns an object containing the first match of the regular expression and the matches of its subexpressions. The key of each match value is the name of the group when specified, otherwise it is the index of the matching group, starting with the expression as a whole at 0.",
+		"Finds the first regex match and returns an object with named capture groups as keys (or numeric indices for unnamed groups). The key \"0\" contains the full match. Use for parsing structured text into fields.",
 		NewExampleSpec("",
 			`root.matches = this.value.re_find_object("a(?P<foo>x*)b")`,
 			`{"value":"-axxb-ab-"}`,
@@ -1652,7 +1867,7 @@ var _ = registerSimpleMethod(
 		"re_find_all_object", "",
 	).InCategory(
 		MethodCategoryRegexp,
-		"Returns an array of objects containing all matches of the regular expression and the matches of its subexpressions. The key of each match value is the name of the group when specified, otherwise it is the index of the matching group, starting with the expression as a whole at 0.",
+		"Finds all regex matches and returns an array of objects with named capture groups as keys. Each object represents one match with its captured groups. Use for parsing multiple structured records from text.",
 		NewExampleSpec("",
 			`root.matches = this.value.re_find_all_object("a(?P<foo>x*)b")`,
 			`{"value":"-axxb-ab-"}`,
@@ -1719,7 +1934,7 @@ var _ = registerSimpleMethod(
 		"re_match", "",
 	).InCategory(
 		MethodCategoryRegexp,
-		"Checks whether a regular expression matches against any part of a string and returns a boolean.",
+		"Tests if a regular expression matches anywhere in a string, returning `true` or `false`. Use for validation or conditional routing based on patterns.",
 		NewExampleSpec("",
 			`root.matches = this.value.re_match("[0-9]")`,
 			`{"value":"there are 10 puppies"}`,
@@ -1755,7 +1970,9 @@ var _ = registerSimpleMethod(
 //------------------------------------------------------------------------------
 
 var _ = registerSimpleMethod(
-	NewHiddenMethodSpec("re_replace").
+	NewMethodSpec("re_replace", "Replaces all regex matches with a replacement string that can reference capture groups using `$1`, `$2`, etc. Use for pattern-based transformations or data reformatting.").InCategory(
+		MethodCategoryRegexp, "",
+	).
 		Param(ParamString("pattern", "The pattern to match against.")).
 		Param(ParamString("value", "The value to replace with.")),
 	reReplaceAllImpl,
@@ -1766,11 +1983,16 @@ var _ = registerSimpleMethod(
 		"re_replace_all", "",
 	).InCategory(
 		MethodCategoryRegexp,
-		"Replaces all occurrences of the argument regular expression in a string with a value. Inside the value $ signs are interpreted as submatch expansions, e.g. `$1` represents the text of the first submatch.",
+		"Replaces all regex matches with a replacement string that can reference capture groups using `$1`, `$2`, etc. Use for pattern-based transformations or data reformatting.",
 		NewExampleSpec("",
 			`root.new_value = this.value.re_replace_all("ADD ([0-9]+)","+($1)")`,
 			`{"value":"foo ADD 70"}`,
 			`{"new_value":"foo +(70)"}`,
+		),
+		NewExampleSpec("",
+			`root.masked = this.email.re_replace_all("(\\w{2})\\w+@", "$1***@")`,
+			`{"email":"alice@example.com"}`,
+			`{"masked":"al***@example.com"}`,
 		),
 	).
 		Param(ParamString("pattern", "The pattern to match against.")).
@@ -1813,11 +2035,16 @@ var _ = registerSimpleMethod(
 		"split", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Split a string value into an array of strings by splitting it on a string separator.",
+		"Splits a string into an array of substrings using a delimiter. Use for parsing CSV-like data, splitting paths, or breaking text into tokens.",
 		NewExampleSpec("",
 			`root.new_value = this.value.split(",")`,
 			`{"value":"foo,bar,baz"}`,
 			`{"new_value":["foo","bar","baz"]}`,
+		),
+		NewExampleSpec("",
+			`root.words = this.sentence.split(" ")`,
+			`{"sentence":"hello world from bloblang"}`,
+			`{"words":["hello","world","from","bloblang"]}`,
 		),
 	).Param(ParamString("delimiter", "The delimiter to split with.")),
 	func(args *ParsedParams) (simpleMethod, error) {
@@ -1855,7 +2082,7 @@ var _ = registerSimpleMethod(
 		"string", "",
 	).InCategory(
 		MethodCategoryCoercion,
-		"Marshal a value into a string. If the value is already a string it is unchanged.",
+		"Converts any value to its string representation. Numbers, booleans, and objects are converted to strings; existing strings are unchanged. Use for type coercion or creating string representations.",
 		NewExampleSpec("",
 			`root.nested_json = this.string()`,
 			`{"foo":"bar"}`,
@@ -1878,57 +2105,10 @@ var _ = registerSimpleMethod(
 
 var _ = registerSimpleMethod(
 	NewMethodSpec(
-		"strip_html", "",
-	).InCategory(
-		MethodCategoryStrings,
-		"Attempts to remove all HTML tags from a target string.",
-		NewExampleSpec("",
-			`root.stripped = this.value.strip_html()`,
-			`{"value":"<p>the plain <strong>old text</strong></p>"}`,
-			`{"stripped":"the plain old text"}`,
-		),
-		NewExampleSpec("It's also possible to provide an explicit list of element types to preserve in the output.",
-			`root.stripped = this.value.strip_html(["article"])`,
-			`{"value":"<article><p>the plain <strong>old text</strong></p></article>"}`,
-			`{"stripped":"<article>the plain old text</article>"}`,
-		),
-	).Param(ParamArray("preserve", "An optional array of element types to preserve in the output.").Optional()),
-	func(args *ParsedParams) (simpleMethod, error) {
-		p := bluemonday.NewPolicy()
-		tags, err := args.FieldOptionalArray("preserve")
-		if err != nil {
-			return nil, err
-		}
-		if tags != nil {
-			tagStrs := make([]string, len(*tags))
-			for i, ele := range *tags {
-				var ok bool
-				if tagStrs[i], ok = ele.(string); !ok {
-					return nil, fmt.Errorf("invalid arg at index %v: %w", i, value.NewTypeError(ele, value.TString))
-				}
-			}
-			p = p.AllowElements(tagStrs...)
-		}
-		return func(v any, ctx FunctionContext) (any, error) {
-			switch t := v.(type) {
-			case string:
-				return p.Sanitize(t), nil
-			case []byte:
-				return p.SanitizeBytes(t), nil
-			}
-			return nil, value.NewTypeError(v, value.TString)
-		}, nil
-	},
-)
-
-//------------------------------------------------------------------------------
-
-var _ = registerSimpleMethod(
-	NewMethodSpec(
 		"trim", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Remove all leading and trailing characters from a string that are contained within an argument cutset. If no arguments are provided then whitespace is removed.",
+		"Removes leading and trailing characters from a string. Without arguments, removes whitespace. With a cutset argument, removes any characters in the cutset. Use for cleaning user input or normalizing strings.",
 		NewExampleSpec("",
 			`root.title = this.title.trim("!?")
 root.description = this.description.trim()`,
@@ -1964,7 +2144,7 @@ var _ = registerSimpleMethod(
 		"trim_prefix", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Remove the provided leading prefix substring from a string. If the string does not have the prefix substring, it is returned unchanged.",
+		"Removes a specified prefix from the beginning of a string if present. If the string doesn't start with the prefix, returns the string unchanged. Use for stripping known prefixes from identifiers or paths.",
 		NewExampleSpec("",
 			`root.name = this.name.trim_prefix("foobar_")
 root.description = this.description.trim_prefix("foobar_")`,
@@ -1996,7 +2176,7 @@ var _ = registerSimpleMethod(
 		"trim_suffix", "",
 	).InCategory(
 		MethodCategoryStrings,
-		"Remove the provided trailing suffix substring from a string. If the string does not have the suffix substring, it is returned unchanged.",
+		"Removes a specified suffix from the end of a string if present. If the string doesn't end with the suffix, returns the string unchanged. Use for stripping file extensions or known suffixes.",
 		NewExampleSpec("",
 			`root.name = this.name.trim_suffix("_foobar")
 root.description = this.description.trim_suffix("_foobar")`,
@@ -2017,6 +2197,54 @@ root.description = this.description.trim_suffix("_foobar")`,
 				return strings.TrimSuffix(t, suffix), nil
 			case []byte:
 				return bytes.TrimSuffix(t, bytesSuffix), nil
+			}
+			return nil, value.NewTypeError(v, value.TString)
+		}, nil
+	},
+)
+
+//------------------------------------------------------------------------------
+
+var _ = registerSimpleMethod(
+	NewMethodSpec(
+		"repeat", "",
+	).InCategory(
+		MethodCategoryStrings,
+		"Creates a new string by repeating the input string a specified number of times. Use for generating padding, separators, or test data.",
+		NewExampleSpec("",
+			`root.repeated = this.name.repeat(3)
+root.not_repeated = this.name.repeat(0)`,
+			`{"name":"bob"}`,
+			`{"not_repeated":"","repeated":"bobbobbob"}`,
+		),
+		NewExampleSpec("",
+			`root.separator = "-".repeat(10)`,
+			`{}`,
+			`{"separator":"----------"}`,
+		),
+	).Param(ParamInt64("count", "The number of times to repeat the string.")),
+	func(args *ParsedParams) (simpleMethod, error) {
+		count, err := args.FieldInt64("count")
+		if err != nil {
+			return nil, err
+		}
+		if count < 0 {
+			return nil, fmt.Errorf("invalid count, must be greater than or equal to zero: %d", count)
+		}
+		return func(v any, ctx FunctionContext) (any, error) {
+			switch t := v.(type) {
+			case string:
+				hi, lo := bits.Mul(uint(len(t)), uint(count))
+				if hi > 0 || lo > uint(math.MaxInt) {
+					return nil, fmt.Errorf("invalid count, would overflow: %d*%d", len(t), count)
+				}
+				return strings.Repeat(t, int(count)), nil
+			case []byte:
+				hi, lo := bits.Mul(uint(len(t)), uint(count))
+				if hi > 0 || lo > uint(math.MaxInt) {
+					return nil, fmt.Errorf("invalid count, would overflow: %d*%d", len(t), count)
+				}
+				return bytes.Repeat(t, int(count)), nil
 			}
 			return nil, value.NewTypeError(v, value.TString)
 		}, nil

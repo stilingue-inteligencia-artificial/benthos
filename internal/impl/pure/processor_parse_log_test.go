@@ -1,18 +1,19 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestParseLogCases(t *testing.T) {
@@ -60,7 +61,7 @@ parse_log:
 			t.Fatal(err)
 		}
 		t.Run(test.name, func(tt *testing.T) {
-			msgsOut, res := proc.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte(test.input)}))
+			msgsOut, res := proc.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte(test.input)}))
 			if res != nil {
 				tt.Fatal(res)
 			}
@@ -107,7 +108,7 @@ parse_log:
 
 	for _, test := range tests {
 		t.Run(test.name, func(tt *testing.T) {
-			msgsOut, res := proc.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte(test.input)}))
+			msgsOut, res := proc.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte(test.input)}))
 			if res != nil {
 				tt.Fatal(res)
 			}

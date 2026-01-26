@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package common
 
 import (
@@ -14,22 +16,21 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/api"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/config"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/api"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
 )
 
 // CreateManager from a CLI context and a stream config.
 func CreateManager(
 	c *cli.Context,
+	cliOpts *CLIOpts,
 	logger log.Modular,
 	streamsMode bool,
-	version, dateBuilt string,
 	conf config.Type,
 	mgrOpts ...manager.OptFunc,
 ) (stoppableMgr *StoppableManager, err error) {
@@ -57,15 +58,16 @@ func CreateManager(
 	// to revise in future.
 	tmpMgr := mock.NewManager()
 	tmpMgr.L = logger
+	tmpMgr.Version = cliOpts.Version
 
 	// Create our metrics type.
-	if stats, err = bundle.AllMetrics.Init(conf.Metrics, tmpMgr); err != nil {
+	if stats, err = cliOpts.Environment.MetricsInit(conf.Metrics, tmpMgr); err != nil {
 		err = fmt.Errorf("failed to connect to metrics aggregator: %w", err)
 		return
 	}
 
 	// Create our tracer type.
-	if trac, err = bundle.AllTracers.Init(conf.Tracer, tmpMgr); err != nil {
+	if trac, err = cliOpts.Environment.TracersInit(conf.Tracer, tmpMgr); err != nil {
 		err = fmt.Errorf("failed to initialise tracer: %w", err)
 		return
 	}
@@ -73,12 +75,12 @@ func CreateManager(
 	// Create HTTP API with a sanitised service config.
 	var sanitNode yaml.Node
 	if err = sanitNode.Encode(conf); err == nil {
-		sanitConf := docs.NewSanitiseConfig(bundle.GlobalEnvironment)
+		sanitConf := docs.NewSanitiseConfig(cliOpts.Environment)
 		sanitConf.RemoveTypeField = true
 		sanitConf.ScrubSecrets = true
-		sanitSpec := config.Spec()
+		sanitSpec := cliOpts.MainConfigSpecCtor()
 		if streamsMode {
-			sanitSpec = config.SpecWithoutStream()
+			sanitSpec = config.SpecWithoutStream(cliOpts.MainConfigSpecCtor())
 		}
 		err = sanitSpec.SanitiseYAML(&sanitNode, sanitConf)
 	}
@@ -88,24 +90,31 @@ func CreateManager(
 	}
 
 	var httpServer *api.Type
-	if httpServer, err = api.New(version, dateBuilt, conf.HTTP, sanitNode, logger, stats); err != nil {
+	if httpServer, err = api.New(cliOpts.Version, cliOpts.DateBuilt, conf.HTTP, sanitNode, logger, stats); err != nil {
 		err = fmt.Errorf("failed to initialise API: %w", err)
 		return
 	}
 
 	mgrOpts = append([]manager.OptFunc{
 		manager.OptSetAPIReg(httpServer),
+		manager.OptSetEngineVersion(cliOpts.Version),
 		manager.OptSetStreamHTTPNamespacing(c.Bool("prefix-stream-endpoints")),
 		manager.OptSetLogger(logger),
 		manager.OptSetMetrics(stats),
 		manager.OptSetTracer(trac),
 		manager.OptSetStreamsMode(streamsMode),
+		manager.OptSetBloblangEnvironment(cliOpts.BloblEnvironment),
+		manager.OptSetEnvironment(cliOpts.Environment),
 	}, mgrOpts...)
 
 	// Create resource manager.
 	var mgr *manager.Type
 	if mgr, err = manager.New(conf.ResourceConfig, mgrOpts...); err != nil {
 		err = fmt.Errorf("failed to initialise resources: %w", err)
+		return
+	}
+
+	if err = mgr.TriggerStartConsuming(c.Context); err != nil {
 		return
 	}
 
@@ -120,17 +129,17 @@ func CreateManager(
 // stopped according to the configured shutdown timeout.
 func RunManagerUntilStopped(
 	c *cli.Context,
+	opts *CLIOpts,
 	conf config.Type,
 	stopMgr *StoppableManager,
-	stopStrm Stoppable,
+	stopStrm RunningStream,
 	dataStreamClosedChan chan struct{},
-) int {
+) error {
 	var exitDelay time.Duration
 	if td := conf.SystemCloseDelay; td != "" {
 		var err error
 		if exitDelay, err = time.ParseDuration(td); err != nil {
-			stopMgr.Manager().Logger().Error("Failed to parse shutdown delay period string: %v\n", err)
-			return 1
+			return fmt.Errorf("failed to parse shutdown delay period string: %w", err)
 		}
 	}
 
@@ -138,8 +147,7 @@ func RunManagerUntilStopped(
 	if tout := conf.SystemCloseTimeout; tout != "" {
 		var err error
 		if exitTimeout, err = time.ParseDuration(tout); err != nil {
-			stopMgr.Manager().Logger().Error("Failed to parse shutdown timeout period string: %v\n", err)
-			return 1
+			return fmt.Errorf("failed to parse shutdown timeout period string: %w", err)
 		}
 	}
 
@@ -158,13 +166,15 @@ func RunManagerUntilStopped(
 				"Service failed to close cleanly within allocated time." +
 					" Exiting forcefully and dumping stack trace to stderr",
 			)
-			_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+			_ = pprof.Lookup("goroutine").WriteTo(opts.Stderr, 1)
 			os.Exit(1)
 		}()
 
 		ctx, done := context.WithTimeout(c.Context, exitTimeout)
+		defer done()
+
 		if err := stopStrm.Stop(ctx); err != nil {
-			os.Exit(1)
+			return
 		}
 
 		if err := stopMgr.Stop(ctx); err != nil {
@@ -172,14 +182,13 @@ func RunManagerUntilStopped(
 				"Service failed to close resources cleanly within allocated time: %v."+
 					" Exiting forcefully and dumping stack trace to stderr\n", err,
 			)
-			_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
-			os.Exit(1)
+			_ = pprof.Lookup("goroutine").WriteTo(opts.Stderr, 1)
+			return
 		}
-		done()
 	}()
 
 	var deadLineTrigger <-chan time.Time
-	if dl, exists := c.Context.Deadline(); exists {
+	if dl, exists := c.Deadline(); exists {
 		// If a deadline has been set by the cli context then we need to trigger
 		// graceful termination before it's reached, otherwise it'll never
 		// happen as the context will cancel the cleanup.
@@ -215,10 +224,10 @@ func RunManagerUntilStopped(
 		stopMgr.Manager().Logger().Info("Pipeline has terminated. Shutting down the service")
 	case <-deadLineTrigger:
 		stopMgr.Manager().Logger().Info("Run context deadline about to be reached. Shutting down the service")
-	case <-c.Context.Done():
+	case <-c.Done():
 		stopMgr.Manager().Logger().Info("Run context was cancelled. Shutting down the service")
 	}
-	return 0
+	return nil
 }
 
 func newStoppableManager(api *api.Type, mgr *manager.Type) *StoppableManager {
@@ -267,11 +276,10 @@ func (s *StoppableManager) Stop(ctx context.Context) error {
 	}
 
 	go func() {
-		_ = s.api.Shutdown(ctx)
+		_ = s.api.Shutdown(context.Background())
 		select {
 		case <-s.apiClosedChan:
 			return
-		case <-ctx.Done():
 		case <-gracefulCutOff:
 		}
 		s.mgr.Logger().Warn("Service failed to close HTTP server gracefully in time")
@@ -282,7 +290,7 @@ func (s *StoppableManager) Stop(ctx context.Context) error {
 		return err
 	}
 	if err := s.mgr.CloseObservability(ctx); err != nil {
-		s.mgr.Logger().Error("Failed to cleanly close observability components: %w", err)
+		s.mgr.Logger().Error("Failed to cleanly close observability components: %s", err)
 	}
 	return nil
 }

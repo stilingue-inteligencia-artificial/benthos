@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package studio
 
 import (
@@ -7,21 +9,21 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"path"
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/benthosdev/benthos/v4/internal/config/schema"
+	"github.com/redpanda-data/benthos/v4/internal/cli/common"
+	"github.com/redpanda-data/benthos/v4/internal/config/schema"
 )
 
-func syncSchemaCommand(version, dateBuilt string) *cli.Command {
+func syncSchemaCommand(cliOpts *common.CLIOpts) *cli.Command {
 	return &cli.Command{
 		Name:  "sync-schema",
-		Usage: "Synchronizes the schema of this Benthos instance with a studio session",
+		Usage: "Synchronizes the schema of this Redpanda Connect instance with a studio session",
 		Description: `
 This sync allows custom plugins and templates to be configured and linted
-correctly within Benthos studio.
+correctly within Redpanda Connect studio.
 
 In order to synchronize a single use token must be generated from the session
 page within the studio application.`[1:],
@@ -40,6 +42,11 @@ page within the studio application.`[1:],
 				Value:    "",
 				Usage:    "The single use token used to authenticate the request.",
 			},
+			&cli.StringFlag{
+				Name:  "api-path-prefix",
+				Value: "api",
+				Usage: "Specify the API path prefixof the Benthos studio server to connect to.",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			endpoint := c.String("endpoint")
@@ -48,31 +55,32 @@ page within the studio application.`[1:],
 
 			u, err := url.Parse(endpoint)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to parse endpoint: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("failed to parse endpoint: %w", err)
 			}
-			u.Path = path.Join(u.Path, fmt.Sprintf("/api/v1/token/%v/session/%v/schema", tokenID, sessionID))
+			apiPathPrefix := c.String("api-path-prefix")
+			if apiPathPrefix == "" {
+				apiPathPrefix = "api"
+			}
+			u.Path = path.Join(u.Path, "/", apiPathPrefix, fmt.Sprintf("/v1/token/%v/session/%v/schema", tokenID, sessionID))
 
-			schema := schema.New(version, dateBuilt)
+			schema := schema.New(cliOpts.Version, cliOpts.DateBuilt, cliOpts.Environment, cliOpts.BloblEnvironment)
+			schema.Config = cliOpts.MainConfigSpecCtor()
 			schema.Scrub()
 			schemaBytes, err := json.Marshal(schema)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to encode schema: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("failed to encode schema: %w", err)
 			}
 
 			res, err := http.Post(u.String(), "application/json", bytes.NewReader(schemaBytes))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Sync request failed: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("sync request failed: %w", err)
 			}
 
 			defer res.Body.Close()
 
 			if res.StatusCode < 200 || res.StatusCode > 299 {
 				resBytes, _ := io.ReadAll(res.Body)
-				fmt.Fprintf(os.Stderr, "Sync request failed (%v): %v\n", res.StatusCode, string(resBytes))
-				os.Exit(1)
+				return fmt.Errorf("sync request failed (%v): %v", res.StatusCode, string(resBytes))
 			}
 			return nil
 		},

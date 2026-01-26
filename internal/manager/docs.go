@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
@@ -5,7 +7,7 @@ import (
 
 	"github.com/Jeffail/gabs/v2"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 func lintResource(ctx docs.LintContext, line, col int, v any) []docs.Lint {

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package test_test
 
 import (
@@ -7,9 +9,11 @@ import (
 
 	"github.com/fatih/color"
 
-	"github.com/benthosdev/benthos/v4/internal/cli/test"
-	dtest "github.com/benthosdev/benthos/v4/internal/config/test"
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/cli/test"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	dtest "github.com/redpanda-data/benthos/v4/internal/config/test"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 )
 
 func TestDefinitionFail(t *testing.T) {
@@ -67,7 +71,7 @@ pipeline:
 		},
 	}
 
-	failures, err := test.Execute(def, filepath.Join(testDir, "config1.yaml"), nil, log.Noop())
+	failures, err := test.Execute(bundle.GlobalEnvironment, config.Spec(), def, filepath.Join(testDir, "config1.yaml"), nil, log.Noop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +155,7 @@ pipeline:
 		},
 	}
 
-	failures, err := test.Execute(def, filepath.Join(testDir, "config1.yaml"), nil, log.Noop())
+	failures, err := test.Execute(bundle.GlobalEnvironment, config.Spec(), def, filepath.Join(testDir, "config1.yaml"), nil, log.Noop())
 	if err != nil {
 		t.Fatal(err)
 	}

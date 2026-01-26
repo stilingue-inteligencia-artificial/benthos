@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package mock
 
 import (
@@ -8,25 +10,27 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/component/scanner"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // Manager provides a mock benthos manager that components can use to test
 // interactions with fake resources.
 type Manager struct {
+	Version string
+
 	Inputs     map[string]*Input
 	Caches     map[string]map[string]CacheItem
 	RateLimits map[string]RateLimit
@@ -34,6 +38,8 @@ type Manager struct {
 	Processors map[string]Processor
 	Pipes      map[string]<-chan message.Transaction
 	lock       sync.Mutex
+
+	genericValues *sync.Map
 
 	// OnRegisterEndpoint can be set in order to intercept endpoints registered
 	// by components.
@@ -48,17 +54,25 @@ type Manager struct {
 // NewManager provides a new mock manager.
 func NewManager() *Manager {
 	return &Manager{
-		Inputs:     map[string]*Input{},
-		Caches:     map[string]map[string]CacheItem{},
-		RateLimits: map[string]RateLimit{},
-		Outputs:    map[string]OutputWriter{},
-		Processors: map[string]Processor{},
-		Pipes:      map[string]<-chan message.Transaction{},
-		CustomFS:   ifs.OS(),
-		M:          metrics.Noop(),
-		L:          log.Noop(),
-		T:          noop.NewTracerProvider(),
+		Version:       "mock",
+		Inputs:        map[string]*Input{},
+		Caches:        map[string]map[string]CacheItem{},
+		RateLimits:    map[string]RateLimit{},
+		Outputs:       map[string]OutputWriter{},
+		Processors:    map[string]Processor{},
+		Pipes:         map[string]<-chan message.Transaction{},
+		CustomFS:      ifs.OS(),
+		M:             metrics.Noop(),
+		L:             log.Noop(),
+		T:             noop.NewTracerProvider(),
+		genericValues: &sync.Map{},
 	}
+}
+
+// EngineVersion returns the version stamp associated with the underlying
+// benthos engine.
+func (m *Manager) EngineVersion() string {
+	return m.Version
 }
 
 // ForStream returns the same mock manager.
@@ -361,4 +375,21 @@ func (m *Manager) SetPipe(name string, t <-chan message.Transaction) {
 // UnsetPipe removes a named transaction chan.
 func (m *Manager) UnsetPipe(name string, t <-chan message.Transaction) {
 	delete(m.Pipes, name)
+}
+
+// GetGeneric attempts to obtain and return a generic resource value by key.
+func (m *Manager) GetGeneric(key any) (any, bool) {
+	return m.genericValues.Load(key)
+}
+
+// GetOrSetGeneric attempts to obtain an existing value for a given key if
+// present. Otherwise, it stores and returns the provided value. The loaded
+// result is true if the value was loaded, false if stored.
+func (m *Manager) GetOrSetGeneric(key, value any) (actual any, loaded bool) {
+	return m.genericValues.LoadOrStore(key, value)
+}
+
+// SetGeneric attempts to set a generic resource to a given value by key.
+func (m *Manager) SetGeneric(key, value any) {
+	m.genericValues.Store(key, value)
 }

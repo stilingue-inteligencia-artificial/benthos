@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager_test
 
 import (
@@ -6,16 +8,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	bmock "github.com/benthosdev/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	bmock "github.com/redpanda-data/benthos/v4/internal/manager/mock"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestInputWrapperSwap(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	conf, err := testutil.InputFromYAML(`
@@ -30,7 +32,9 @@ generate:
 	iWrapped, err := bMgr.NewInput(conf)
 	require.NoError(t, err)
 
-	iWrapper := manager.WrapInput(iWrapped)
+	iWrapper := manager.WrapInput(iWrapped, bMgr)
+	iWrapper.TriggerStartConsuming()
+
 	select {
 	case tran, open := <-iWrapper.TransactionChan():
 		require.True(t, open)

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package config
 
 import (
@@ -13,10 +15,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 )
 
 func TestReaderFileWatching(t *testing.T) {
@@ -507,7 +509,7 @@ processor_resources:
 
 	rdr := newDummyReader("", []string{confDir + "/*.yaml"})
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Empty(t, lints)
 
@@ -529,7 +531,7 @@ processor_resources:
 	require.NoError(t, os.WriteFile(confBPath, procConfig("b", "b2"), 0o644))
 	require.NoError(t, os.WriteFile(confCPath, procConfig("c", "c2"), 0o644))
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.Eventually(t, func() bool {

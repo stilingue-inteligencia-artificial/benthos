@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package integration
 
 import (
@@ -7,17 +9,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
 )
 
 // CacheTestConfigVars exposes some variables injected into template configs for
@@ -65,7 +67,7 @@ func newCacheTestEnvironment(t *testing.T, confTemplate string) cacheTestEnviron
 			General: map[string]string{},
 		},
 		timeout: time.Second * 90,
-		ctx:     context.Background(),
+		ctx:     t.Context(),
 		log:     log.Noop(),
 		stats:   metrics.Noop(),
 	}
@@ -206,6 +208,8 @@ func initCache(t *testing.T, env *cacheTestEnvironment) cache.V1 {
 	manager, err := manager.New(conf, manager.OptSetLogger(env.log), manager.OptSetMetrics(env.stats))
 	require.NoError(t, err)
 
+	require.NoError(t, manager.TriggerStartConsuming(t.Context()))
+
 	var c cache.V1
 	require.NoError(t, manager.AccessCache(env.ctx, "testcache", func(v cache.V1) {
 		c = v
@@ -214,5 +218,5 @@ func initCache(t *testing.T, env *cacheTestEnvironment) cache.V1 {
 }
 
 func closeCache(t *testing.T, cache cache.V1) {
-	require.NoError(t, cache.Close(context.Background()))
+	require.NoError(t, cache.Close(context.TODO()))
 }

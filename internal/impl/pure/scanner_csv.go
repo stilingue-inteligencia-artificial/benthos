@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,7 +8,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -21,7 +23,7 @@ func csvScannerSpec() *service.ConfigSpec {
 		Stable().
 		Summary("Consume comma-separated values row by row, including support for custom delimiters.").
 		Description(`
-### Metadata
+== Metadata
 
 This scanner adds the following metadata to each message:
 
@@ -45,13 +47,10 @@ This scanner adds the following metadata to each message:
 }
 
 func init() {
-	err := service.RegisterBatchScannerCreator("csv", csvScannerSpec(),
+	service.MustRegisterBatchScannerCreator("csv", csvScannerSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchScannerCreator, error) {
 			return csvScannerFromParsed(conf)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func csvScannerFromParsed(conf *service.ParsedConfig) (l *csvScannerCreator, err error) {

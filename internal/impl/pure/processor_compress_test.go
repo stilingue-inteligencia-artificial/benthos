@@ -1,8 +1,9 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
 	"bytes"
-	"context"
 	"reflect"
 	"testing"
 
@@ -14,9 +15,9 @@ import (
 	"github.com/pierrec/lz4/v4"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestCompressBadAlgo(t *testing.T) {
@@ -68,7 +69,7 @@ compress:
 		t.Fatal(err)
 	}
 
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(input))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(input))
 	if len(msgs) != 1 {
 		t.Error("Compress failed")
 	} else if res != nil {
@@ -115,7 +116,7 @@ compress:
 		t.Fatal(err)
 	}
 
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(input))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(input))
 	if len(msgs) != 1 {
 		t.Error("Compress failed")
 	} else if res != nil {
@@ -162,7 +163,7 @@ compress:
 		t.Fatal(err)
 	}
 
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(input))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(input))
 	if len(msgs) != 1 {
 		t.Error("Compress failed")
 	} else if res != nil {
@@ -212,7 +213,7 @@ compress:
 		t.Fatal(err)
 	}
 
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(input))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(input))
 	if len(msgs) != 1 {
 		t.Error("Compress failed")
 	} else if res != nil {
@@ -254,7 +255,7 @@ compress:
 		t.Fatal(err)
 	}
 
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(input))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(input))
 	if len(msgs) != 1 {
 		t.Error("Compress failed")
 	} else if res != nil {
@@ -304,7 +305,7 @@ compress:
 		t.Fatal(err)
 	}
 
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(input))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(input))
 	if len(msgs) != 1 {
 		t.Error("Compress failed")
 	} else if res != nil {

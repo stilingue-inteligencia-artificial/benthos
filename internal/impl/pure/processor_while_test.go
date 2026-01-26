@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -9,12 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestWhileErrs(t *testing.T) {
@@ -46,7 +48,7 @@ while:
 		[]byte(`bar`),
 	}
 
-	msg, res := c.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("bar")}))
+	msg, res := c.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("bar")}))
 	require.NoError(t, res)
 
 	assert.Equal(t, exp, message.GetAllBytes(msg[0]))
@@ -75,7 +77,7 @@ while:
 		[]byte(`bar`),
 	}
 
-	msg, res := c.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("bar")}))
+	msg, res := c.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("bar")}))
 	if res != nil {
 		t.Error(res)
 	}
@@ -108,7 +110,7 @@ while:
 		[]byte(`bar`),
 	}
 
-	msg, res := c.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("bar")}))
+	msg, res := c.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("bar")}))
 	if res != nil {
 		t.Error(res)
 	}
@@ -141,7 +143,7 @@ while:
 		[]byte(`bar`),
 	}
 
-	msg, res := c.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("bar")}))
+	msg, res := c.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("bar")}))
 	if res != nil {
 		t.Error(res)
 	}
@@ -168,7 +170,7 @@ while:
 		t.Fatal(err)
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	go func() {

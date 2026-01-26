@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -8,14 +10,14 @@ import (
 
 	"github.com/robfig/cron/v3"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/parser"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/parser"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -30,10 +32,10 @@ func genInputSpec() *service.ConfigSpec {
 		Stable().
 		Categories("Utility").
 		Version("3.40.0").
-		Summary("Generates messages at a given interval using a [Bloblang](/docs/guides/bloblang/about) mapping executed without a context. This allows you to generate messages for testing your pipeline configs.").
+		Summary("Generates messages at a given interval using a xref:guides:bloblang/about.adoc[Bloblang] mapping executed without a context. This allows you to generate messages for testing your pipeline configs.").
 		Fields(
 			service.NewBloblangField(giFieldMapping).
-				Description("A [bloblang](/docs/guides/bloblang/about) mapping to use for generating messages.").
+				Description("A xref:guides:bloblang/about.adoc[Bloblang] mapping to use for generating messages.").
 				Examples(
 					`root = "hello world"`,
 					`root = {"test":"message","id":uuid_v4()}`,
@@ -85,7 +87,7 @@ input:
 }
 
 func init() {
-	err := service.RegisterBatchInput("generate", genInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
+	service.MustRegisterBatchInput("generate", genInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 		nm := interop.UnwrapManagement(mgr)
 
 		var b input.Async
@@ -104,22 +106,20 @@ func init() {
 		}
 		return interop.NewUnwrapInternalInput(i), nil
 	})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
 
 type generateReader struct {
-	remaining    int
-	batchSize    int
-	limited      bool
-	firstIsFree  bool
-	exec         *mapping.Executor
-	timer        *time.Ticker
-	schedule     *cron.Schedule
-	schedulePrev *time.Time
+	staticConnResult component.ConnectionTestResults
+	remaining        int
+	batchSize        int
+	limited          bool
+	firstIsFree      bool
+	exec             *mapping.Executor
+	timer            *time.Ticker
+	schedule         *cron.Schedule
+	schedulePrev     *time.Time
 }
 
 func newGenerateReaderFromParsed(conf *service.ParsedConfig, mgr bundle.NewManagement) (*generateReader, error) {
@@ -180,14 +180,15 @@ func newGenerateReaderFromParsed(conf *service.ParsedConfig, mgr bundle.NewManag
 	}
 
 	return &generateReader{
-		exec:         exec,
-		remaining:    count,
-		batchSize:    batchSize,
-		limited:      count > 0,
-		timer:        timer,
-		schedule:     schedule,
-		schedulePrev: schedulePrev,
-		firstIsFree:  firstIsFree,
+		staticConnResult: component.ConnectionTestSucceeded(mgr).AsList(),
+		exec:             exec,
+		remaining:        count,
+		batchSize:        batchSize,
+		limited:          count > 0,
+		timer:            timer,
+		schedule:         schedule,
+		schedulePrev:     schedulePrev,
+		firstIsFree:      firstIsFree,
 	}, nil
 }
 
@@ -204,6 +205,10 @@ func parseCronExpression(cronExpression string) (*cron.Schedule, error) {
 	}
 
 	return &cronSchedule, nil
+}
+
+func (b *generateReader) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return b.staticConnResult
 }
 
 // Connect establishes a Bloblang reader.

@@ -1,15 +1,17 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"context"
 	"errors"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/transaction"
-	"github.com/benthosdev/benthos/v4/internal/value"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/transaction"
+	"github.com/redpanda-data/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 // MessageHandlerFunc is a function signature defining a component that consumes
@@ -236,6 +238,17 @@ func (m *Message) SetBytes(b []byte) {
 	m.part.SetBytes(b)
 }
 
+// HasBytes returns true if the raw message bytes are readily available and cached.
+func (m *Message) HasBytes() bool {
+	return m.part.HasBytes()
+}
+
+// HasStructured returns true if the structured message data is readily available
+// and cached.
+func (m *Message) HasStructured() bool {
+	return m.part.HasStructured()
+}
+
 // SetStructured sets the underlying contents of the message as a structured
 // type. This structured value should be a scalar Go type, or either a
 // map[string]interface{} or []interface{} containing the same types all the way
@@ -265,7 +278,7 @@ func (m *Message) SetStructuredMut(i any) {
 
 // SetError marks the message as having failed a processing step and adds the
 // error to it as context. Messages marked with errors can be handled using a
-// range of methods outlined in https://www.benthos.dev/docs/configuration/error_handling.
+// range of methods outlined in https://docs.redpanda.com/redpanda-connect/configuration/error_handling.
 func (m *Message) SetError(err error) {
 	if m.onErr != nil {
 		m.onErr(err)
@@ -275,7 +288,7 @@ func (m *Message) SetError(err error) {
 
 // GetError returns an error associated with a message, or nil if there isn't
 // one. Messages marked with errors can be handled using a range of methods
-// outlined in https://www.benthos.dev/docs/configuration/error_handling.
+// outlined in https://docs.redpanda.com/redpanda-connect/configuration/error_handling.
 func (m *Message) GetError() error {
 	return m.part.ErrorGet()
 }
@@ -465,6 +478,8 @@ func (m *Message) BloblangMutateFrom(blobl *bloblang.Executor, from *Message) (*
 //
 // This method allows mappings to perform windowed aggregations across message
 // batches.
+//
+// Deprecated: Use the much more efficient BloblangExecutor method instead.
 func (b MessageBatch) BloblangQuery(index int, blobl *bloblang.Executor) (*Message, error) {
 	uw := blobl.XUnwrapper().(interface {
 		Unwrap() *mapping.Executor
@@ -493,6 +508,8 @@ func (b MessageBatch) BloblangQuery(index int, blobl *bloblang.Executor) (*Messa
 //
 // This method allows mappings to perform windowed aggregations across message
 // batches.
+//
+// Deprecated: Use the much more efficient BloblangExecutor method instead.
 func (b MessageBatch) BloblangQueryValue(index int, blobl *bloblang.Executor) (any, error) {
 	uw := blobl.XUnwrapper().(interface {
 		Unwrap() *mapping.Executor
@@ -536,6 +553,8 @@ func (b MessageBatch) BloblangQueryValue(index int, blobl *bloblang.Executor) (a
 // Note that using overlay means certain functions within the Bloblang mapping
 // will behave differently. In the root of the mapping the right-hand keywords
 // `root` and `this` refer to the same mutable root of the output document.
+//
+// Deprecated: Use the much more efficient BloblangExecutor method instead.
 func (b MessageBatch) BloblangMutate(index int, blobl *bloblang.Executor) (*Message, error) {
 	uw := blobl.XUnwrapper().(interface {
 		Unwrap() *mapping.Executor
@@ -562,6 +581,10 @@ func (b MessageBatch) BloblangMutate(index int, blobl *bloblang.Executor) (*Mess
 // This method allows interpolation functions to perform windowed aggregations
 // across message batches, and is a more powerful way to interpolate strings
 // than the standard .String method.
+//
+// Note: For performance reasons, if this method is being executed for each
+// member of a batch individually, you should instead use an
+// InterpolationExecutor.
 func (b MessageBatch) TryInterpolatedString(index int, i *InterpolatedString) (string, error) {
 	msg := make(message.Batch, len(b))
 	for i, m := range b {
@@ -576,6 +599,10 @@ func (b MessageBatch) TryInterpolatedString(index int, i *InterpolatedString) (s
 // This method allows interpolation functions to perform windowed aggregations
 // across message batches, and is a more powerful way to interpolate strings
 // than the standard .String method.
+//
+// Note: For performance reasons, if this method is being executed for each
+// member of a batch individually, you should instead use an
+// InterpolationExecutor.
 func (b MessageBatch) TryInterpolatedBytes(index int, i *InterpolatedString) ([]byte, error) {
 	msg := make(message.Batch, len(b))
 	for i, m := range b {
@@ -616,6 +643,67 @@ func (b MessageBatch) InterpolatedBytes(index int, i *InterpolatedString) []byte
 	}
 	bRes, _ := i.expr.Bytes(index, msg)
 	return bRes
+}
+
+// SyncResponseStore represents a store of data that holds a relationship to an
+// input message. Any processor or output has the potential to add data to a
+// store.
+type SyncResponseStore struct {
+	s transaction.ResultStore
+}
+
+// Read the contents of the response store. Any output or processor that
+// registers a synchronous response will result in a single batch of messages
+// being added to the store, and therefore more than one resulting batch is
+// possible.
+func (s *SyncResponseStore) Read() []MessageBatch {
+	ibb := s.s.Get()
+	bb := make([]MessageBatch, len(ibb))
+	for i, ib := range ibb {
+		bb[i] = make(MessageBatch, len(ib))
+		for j, m := range ib {
+			bb[i][j] = NewInternalMessage(m)
+		}
+	}
+	return bb
+}
+
+// WithSyncResponseStore returns a modified message and a response store
+// associated with it. If the message is sent through a processing pipeline or
+// output there is the potential for sync response components to add messages to
+// the store, which can be consumed once an acknowledgement is received.
+func (m *Message) WithSyncResponseStore() (*Message, *SyncResponseStore) {
+	resStore := transaction.NewResultStore()
+
+	newM := m.Copy()
+	newM.part = transaction.AddResultStoreMsg(m.part, resStore)
+
+	return newM, &SyncResponseStore{s: resStore}
+}
+
+// AddSyncResponse attempts to add this individual message, in its exact current
+// condition, to the synchronous response destined for the original source input
+// of this data. Synchronous responses aren't supported by all inputs, and so
+// it's possible that attempting to mark a message as ready for a synchronous
+// response will return an error.
+func (m *Message) AddSyncResponse() error {
+	return transaction.SetAsResponse(message.Batch{m.part})
+}
+
+// WithSyncResponseStore returns a modified message batch and a response store
+// associated with all messages within it. If any message of the batch is sent
+// through a processing pipeline or output there is the potential for sync
+// response components to add messages to the store, which can be consumed once
+// an acknowledgement is received.
+func (b MessageBatch) WithSyncResponseStore() (MessageBatch, *SyncResponseStore) {
+	resStore := transaction.NewResultStore()
+
+	newB := b.Copy()
+	for i, m := range newB {
+		m.part = transaction.AddResultStoreMsg(b[i].part, resStore)
+	}
+
+	return newB, &SyncResponseStore{s: resStore}
 }
 
 // AddSyncResponse attempts to add this batch of messages, in its exact current

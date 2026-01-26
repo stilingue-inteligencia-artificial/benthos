@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
@@ -22,17 +24,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/api"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/transaction"
+	"github.com/redpanda-data/benthos/v4/internal/api"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/transaction"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 type apiRegGorillaMutWrapper struct {
@@ -44,7 +46,7 @@ func (a apiRegGorillaMutWrapper) RegisterEndpoint(path, desc string, h http.Hand
 }
 
 func TestHTTPBasic(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -62,6 +64,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -211,7 +215,7 @@ func getFreePort(t testing.TB) int {
 func TestHTTPServerLifecycle(t *testing.T) {
 	t.Skip("This test seems to break on many systems")
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	freePort := getFreePort(t)
@@ -229,7 +233,7 @@ func TestHTTPServerLifecycle(t *testing.T) {
 		_ = apiImpl.ListenAndServe()
 	}()
 	defer func() {
-		_ = apiImpl.Shutdown(context.Background())
+		_ = apiImpl.Shutdown(t.Context())
 	}()
 
 	mgr, err := manager.New(manager.ResourceConfig{}, manager.OptSetAPIReg(apiImpl))
@@ -294,7 +298,7 @@ http_server:
 }
 
 func TestHTTPServerMetadata(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	reg := apiRegGorillaMutWrapper{mut: mux.NewRouter()}
@@ -308,6 +312,8 @@ http_server:
 
 	server, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	server.TriggerStartConsuming()
 
 	defer func() {
 		server.TriggerStopConsuming()
@@ -359,7 +365,7 @@ http_server:
 }
 
 func TestHTTPServerPathParameters(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	reg := apiRegGorillaMutWrapper{mut: mux.NewRouter()}
@@ -374,6 +380,8 @@ http_server:
 
 	server, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	server.TriggerStartConsuming()
 
 	defer func() {
 		server.TriggerStopConsuming()
@@ -426,7 +434,7 @@ http_server:
 }
 
 func TestHTTPServerPathIsPrefix(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	reg := apiRegGorillaMutWrapper{mut: mux.NewRouter()}
@@ -445,6 +453,8 @@ http_server:
 		server.TriggerStopConsuming()
 		assert.NoError(t, server.WaitForClose(tCtx))
 	}()
+
+	server.TriggerStartConsuming()
 
 	testServer := httptest.NewServer(reg.mut)
 	defer testServer.Close()
@@ -492,7 +502,7 @@ http_server:
 }
 
 func TestHTTPServerPathParametersCustomServer(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	freePort := getFreePort(t)
@@ -505,6 +515,8 @@ http_server:
 
 	server, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
+
+	server.TriggerStartConsuming()
 
 	defer func() {
 		server.TriggerStopConsuming()
@@ -559,7 +571,7 @@ http_server:
 }
 
 func TestHTTPServerPathParametersCustomServerPathIsPrefix(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	freePort := getFreePort(t)
@@ -572,6 +584,8 @@ http_server:
 
 	server, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
+
+	server.TriggerStartConsuming()
 
 	defer func() {
 		server.TriggerStopConsuming()
@@ -628,7 +642,7 @@ http_server:
 func TestHTTPBadRequests(t *testing.T) {
 	t.Parallel()
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	reg := apiRegGorillaMutWrapper{mut: mux.NewRouter()}
@@ -644,6 +658,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -662,7 +678,7 @@ http_server:
 }
 
 func TestHTTPTimeout(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -681,6 +697,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -705,7 +723,7 @@ http_server:
 }
 
 func TestHTTPRateLimit(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -734,6 +752,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -780,7 +800,7 @@ http_server:
 }
 
 func TestHTTPServerWebsockets(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -799,6 +819,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -865,7 +887,7 @@ http_server:
 }
 
 func TestHTTPServerWSRateLimit(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -896,6 +918,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -955,7 +979,7 @@ http_server:
 }
 
 func TestHTTPSyncResponseHeaders(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -980,6 +1004,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -1104,7 +1130,7 @@ func readMultipart(res *http.Response) ([]string, error) {
 }
 
 func TestHTTPSyncResponseMultipart(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -1123,6 +1149,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	t.Cleanup(func() {
@@ -1180,7 +1208,7 @@ http_server:
 }
 
 func TestHTTPSyncResponseHeadersStatus(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -1203,6 +1231,8 @@ http_server:
 
 	h, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	server := httptest.NewServer(reg.mut)
 	defer server.Close()
@@ -1294,7 +1324,7 @@ http_server:
 }
 
 func TestHTTPServerInputEnableCORSOrigins(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+	tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	freePort := getFreePort(t)
@@ -1311,6 +1341,8 @@ http_server:
 
 	server, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
+
+	server.TriggerStartConsuming()
 
 	defer func() {
 		server.TriggerStopConsuming()

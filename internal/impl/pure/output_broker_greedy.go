@@ -1,10 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type greedyOutputBroker struct {
@@ -26,13 +29,24 @@ func (g *greedyOutputBroker) Consume(ts <-chan message.Transaction) error {
 	return nil
 }
 
-func (g *greedyOutputBroker) Connected() bool {
+func (g *greedyOutputBroker) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
 	for _, out := range g.outputs {
-		if !out.Connected() {
-			return false
-		}
+		s = append(s, out.ConnectionTest(ctx)...)
 	}
-	return true
+	return
+}
+
+func (g *greedyOutputBroker) ConnectionStatus() (s component.ConnectionStatuses) {
+	for _, out := range g.outputs {
+		s = append(s, out.ConnectionStatus()...)
+	}
+	return
+}
+
+func (g *greedyOutputBroker) TriggerStartConsuming() {
+	for _, out := range g.outputs {
+		out.TriggerStartConsuming()
+	}
 }
 
 func (g *greedyOutputBroker) TriggerCloseNow() {

@@ -1,15 +1,17 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service_test
 
 import (
 	"bytes"
 	"context"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
 	// Import only required Benthos components, switch with `components/all` for
 	// all standard components.
-	_ "github.com/benthosdev/benthos/v4/public/components/io"
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/io"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 type ReverseProcessor struct {

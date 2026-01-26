@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"context"
 	"sync"
 	"testing"
 	"time"
@@ -34,7 +35,7 @@ interval: 1s
 	rl, err := newLocalRatelimitFromConfig(conf)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := 0; i < 10; i++ {
 		period, _ := rl.Access(ctx)
@@ -58,7 +59,7 @@ interval: 10ms
 	rl, err := newLocalRatelimitFromConfig(conf)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := 0; i < 10; i++ {
 		period, _ := rl.Access(ctx)
@@ -119,7 +120,7 @@ interval: 1ns
 	rl, err := newLocalRatelimitFromConfig(conf)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	for i := 0; i < nParallel; i++ {
 		go func() {

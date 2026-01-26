@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -17,11 +19,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/transaction"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/transaction"
 )
 
 func parseYAMLOutputConf(t testing.TB, formatStr string, args ...any) (conf output.Config) {
@@ -33,7 +35,7 @@ func parseYAMLOutputConf(t testing.TB, formatStr string, args ...any) (conf outp
 }
 
 func TestHTTPClientMultipartEnabled(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	resultChan := make(chan string, 1)
@@ -69,6 +71,8 @@ http_client:
 
 	tChan := make(chan message.Transaction)
 	require.NoError(t, h.Consume(tChan))
+
+	h.TriggerStartConsuming()
 
 	resChan := make(chan error)
 	select {
@@ -106,7 +110,7 @@ http_client:
 }
 
 func TestHTTPClientMultipartDisabled(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	resultChan := make(chan string, 1)
@@ -128,6 +132,8 @@ http_client:
 
 	tChan := make(chan message.Transaction)
 	require.NoError(t, h.Consume(tChan))
+
+	h.TriggerStartConsuming()
 
 	resChan := make(chan error)
 	select {
@@ -170,6 +176,8 @@ func writeBatchToStreamed(ctx context.Context, t *testing.T, batch message.Batch
 	tChan := make(chan message.Transaction)
 	require.NoError(t, out.Consume(tChan))
 
+	out.TriggerStartConsuming()
+
 	return writeBatchToChan(ctx, t, batch, tChan)
 }
 
@@ -192,7 +200,7 @@ func writeBatchToChan(ctx context.Context, t *testing.T, batch message.Batch, tC
 }
 
 func TestHTTPClientRetries(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	var reqCount uint32
@@ -222,7 +230,7 @@ http_client:
 }
 
 func TestHTTPClientBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nTestLoops := 1000
@@ -256,6 +264,8 @@ http_client:
 	tChan := make(chan message.Transaction)
 	require.NoError(t, h.Consume(tChan))
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < nTestLoops; i++ {
 		testStr := fmt.Sprintf("test%v", i)
 		testMsg := message.QuickBatch([][]byte{[]byte(testStr)})
@@ -285,7 +295,7 @@ http_client:
 }
 
 func TestHTTPClientSyncResponse(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nTestLoops := 1000
@@ -316,6 +326,8 @@ http_client:
 	tChan := make(chan message.Transaction)
 	require.NoError(t, h.Consume(tChan))
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < nTestLoops; i++ {
 		testStr := fmt.Sprintf("test%v", i)
 
@@ -330,7 +342,7 @@ http_client:
 		resMsg := resMsgs[0]
 		require.Equal(t, 1, resMsg.Len())
 		assert.Equal(t, "echo: "+testStr, string(resMsg.Get(0).AsBytes()))
-		assert.Equal(t, "", resMsg.Get(0).MetaGetStr("fooheader"))
+		assert.Empty(t, resMsg.Get(0).MetaGetStr("fooheader"))
 	}
 
 	h.TriggerCloseNow()
@@ -338,7 +350,7 @@ http_client:
 }
 
 func TestHTTPClientSyncResponseCopyHeaders(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nTestLoops := 1000
@@ -371,6 +383,8 @@ http_client:
 	tChan := make(chan message.Transaction)
 	require.NoError(t, h.Consume(tChan))
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < nTestLoops; i++ {
 		testStr := fmt.Sprintf("test%v", i)
 
@@ -393,7 +407,7 @@ http_client:
 }
 
 func TestHTTPClientMultipart(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nTestLoops := 1000
@@ -454,6 +468,8 @@ http_client:
 	tChan := make(chan message.Transaction)
 	require.NoError(t, h.Consume(tChan))
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < nTestLoops; i++ {
 		testStr := fmt.Sprintf("test%v", i)
 		testMsg := message.QuickBatch([][]byte{
@@ -488,7 +504,7 @@ http_client:
 }
 
 func TestHTTPOutputClientMultipartBody(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nTestLoops := 1000
@@ -548,6 +564,8 @@ http_client:
 	tChan := make(chan message.Transaction)
 	require.NoError(t, h.Consume(tChan))
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < nTestLoops; i++ {
 		require.NoError(t, writeBatchToChan(ctx, t, message.QuickBatch([][]byte{[]byte("test")}), tChan))
 
@@ -576,7 +594,7 @@ http_client:
 }
 
 func TestHTTPOutputClientMultipartHeaders(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	resultChan := make(chan message.Batch, 1)

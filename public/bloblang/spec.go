@@ -1,10 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bloblang
 
 import (
 	"encoding/json"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
 )
 
 // ParamDefinition describes a single parameter for a function or method.

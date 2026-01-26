@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func localRatelimitConfig() *service.ConfigSpec {
@@ -24,14 +26,11 @@ func localRatelimitConfig() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterRateLimit(
+	service.MustRegisterRateLimit(
 		"local", localRatelimitConfig(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.RateLimit, error) {
 			return newLocalRatelimitFromConfig(conf)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func newLocalRatelimitFromConfig(conf *service.ParsedConfig) (*localRatelimit, error) {

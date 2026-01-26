@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestMemoryCache(t *testing.T) {
@@ -19,7 +20,7 @@ func TestMemoryCache(t *testing.T) {
 	c, err := newMemCacheFromConfig(defConf)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	expErr := service.ErrKeyNotFound
 	if _, act := c.Get(ctx, "foo"); act != expErr {
@@ -83,7 +84,7 @@ compaction_interval: 1ns
 	c, err := newMemCacheFromConfig(defConf)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err = c.Get(ctx, "foo")
 	assert.Equal(t, service.ErrKeyNotFound, err)
@@ -117,7 +118,7 @@ init_values:
 	c, err := newMemCacheFromConfig(defConf)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	exp := "bar"
 	if act, err := c.Get(ctx, "foo"); err != nil {
@@ -156,7 +157,7 @@ compaction_interval: 1ns
 	c, err := newMemCacheFromConfig(defConf)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	expErr := service.ErrKeyNotFound
 	if _, act := c.Get(ctx, "foo"); act != expErr {
@@ -187,7 +188,7 @@ compaction_interval: ""
 	c, err := newMemCacheFromConfig(defConf)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 
@@ -213,7 +214,7 @@ shards: 10
 	c, err := newMemCacheFromConfig(defConf)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 
@@ -239,7 +240,7 @@ shards: 10
 	c, err := newMemCacheFromConfig(defConf)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 

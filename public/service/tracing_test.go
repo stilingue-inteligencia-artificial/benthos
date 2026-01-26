@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service_test
 
 import (
@@ -7,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestOtelTracingPlugin(t *testing.T) {
@@ -56,7 +58,7 @@ tracer:
 	strm, err := builder.Build()
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	require.NoError(t, strm.Run(ctx))
@@ -96,7 +98,7 @@ logger:
 	strm, trace, err := strmBuilder.BuildTraced()
 	require.NoError(t, err)
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 
 	assert.Equal(t, 5, int(trace.TotalInput()))
 	assert.Equal(t, 5, int(trace.TotalOutput()))
@@ -174,7 +176,7 @@ logger:
 		strm, trace, err := strmBuilder.BuildTraced()
 		require.NoError(b, err)
 
-		require.NoError(b, strm.Run(context.Background()))
+		require.NoError(b, strm.Run(b.Context()))
 
 		assert.Equal(b, 5, int(trace.TotalInput()))
 		assert.Equal(b, 5, int(trace.TotalOutput()))
@@ -242,7 +244,7 @@ logger:
 		strm, trace, err := strmBuilder.BuildTraced()
 		require.NoError(b, err)
 
-		require.NoError(b, strm.Run(context.Background()))
+		require.NoError(b, strm.Run(b.Context()))
 
 		assert.Equal(b, 5, int(trace.TotalInput()))
 	}

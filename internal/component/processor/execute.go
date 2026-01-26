@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package processor
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // ExecuteAll attempts to execute a slice of processors to a message. Returns

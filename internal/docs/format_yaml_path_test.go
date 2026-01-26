@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs_test
 
 import (
@@ -8,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 var configSpec = docs.FieldSpecs{
@@ -217,6 +219,23 @@ input:
 input:
   kafka:
     addresses: [ "foo", "bar", "baz" ]
+    topics: [ "baz" ]
+`,
+		},
+		{
+			name: "set array from end",
+			input: `
+input:
+  kafka:
+    addresses: [ "foo", "bar" ]
+    topics: [ "baz" ]
+`,
+			path:  "/input/kafka/addresses/-1",
+			value: `"baz"`,
+			output: `
+input:
+  kafka:
+    addresses: [ "foo", "baz" ]
     topics: [ "baz" ]
 `,
 		},

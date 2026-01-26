@@ -1,19 +1,21 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchProcessor("resource", service.NewConfigSpec().
+	service.MustRegisterBatchProcessor("resource", service.NewConfigSpec().
 		Stable().
 		Categories("Utility").
 		Summary("Resource is a processor type that runs a processor resource identified by its label.").
@@ -44,7 +46,7 @@ processor_resources:
       root.user.age = this.user.age.number()
 `+"```"+`
 
-You can find out more about resources [in this document.](/docs/configuration/resources)`).
+You can find out more about resources in xref:configuration:resources.adoc[]`).
 		Field(service.NewStringField("").Default("")),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchProcessor, error) {
 			name, err := conf.FieldString()
@@ -57,9 +59,6 @@ You can find out more about resources [in this document.](/docs/configuration/re
 			}
 			return interop.NewUnwrapInternalBatchProcessor(p), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type resourceProcessor struct {

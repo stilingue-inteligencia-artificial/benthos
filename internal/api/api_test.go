@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package api_test
 
 import (
@@ -8,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/api"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/api"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestAPIEnableCORS(t *testing.T) {
@@ -74,7 +76,7 @@ func TestAPIEnableCORSOrigins(t *testing.T) {
 	handler.ServeHTTP(response, request)
 
 	assert.Equal(t, http.StatusOK, response.Code)
-	assert.Equal(t, "", response.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, response.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestAPIEnableCORSNoHeaders(t *testing.T) {
@@ -165,7 +167,7 @@ func TestAPIBasicAuth(t *testing.T) {
 				conf.BasicAuth.Salt = "EzrwNJYw2wkErVVV1P36FQ=="
 
 				s, err := api.New("", "", conf, nil, log.Noop(), metrics.Noop())
-				if ok := tc.expectedErr(t, err); !(ok && err == nil) {
+				if ok := tc.expectedErr(t, err); !ok || err != nil {
 					return
 				}
 

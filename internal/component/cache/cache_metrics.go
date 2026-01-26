@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package cache
 
 import (
@@ -7,8 +9,8 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
 )
 
 type metricsCache struct {

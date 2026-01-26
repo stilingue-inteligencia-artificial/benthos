@@ -1,16 +1,18 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/field"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -28,7 +30,7 @@ The index can be negative, and if so the message will be inserted from the end c
 
 The new message will have metadata copied from the first pre-existing message of the batch.
 
-This processor will interpolate functions within the 'content' field, you can find a list of functions [here](/docs/configuration/interpolation#bloblang-queries).`).
+This processor will interpolate functions within the 'content' field, you can find a list of functions xref:configuration:interpolation.adoc#bloblang-queries[here].`).
 		Fields(
 			service.NewIntField(ippFieldIndex).
 				Description("The index within the batch to insert the message at.").
@@ -40,7 +42,7 @@ This processor will interpolate functions within the 'content' field, you can fi
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"insert_part", insertPartSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			index, err := conf.FieldInt(ippFieldIndex)
@@ -60,9 +62,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedBatchedProcessor("insert_part", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type insertPart struct {

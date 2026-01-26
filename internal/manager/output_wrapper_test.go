@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
@@ -9,12 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestOutputWrapperShutdown(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mOutput := &mock.OutputChanneled{

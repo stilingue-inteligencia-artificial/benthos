@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -9,16 +11,16 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/tracing"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/tracing"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -31,19 +33,19 @@ func branchProcSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Categories("Composition").
 		Stable().
-		Summary(`The `+"`branch`"+` processor allows you to create a new request message via a [Bloblang mapping](/docs/guides/bloblang/about), execute a list of processors on the request messages, and, finally, map the result back into the source message using another mapping.`).
+		Summary(`The `+"`branch`"+` processor allows you to create a new request message via a xref:guides:bloblang/about.adoc[Bloblang mapping], execute a list of processors on the request messages, and, finally, map the result back into the source message using another mapping.`).
 		Description(`
 This is useful for preserving the original message contents when using processors that would otherwise replace the entire contents.
 
-### Metadata
+== Metadata
 
-Metadata fields that are added to messages during branch processing will not be automatically copied into the resulting message. In order to do this you should explicitly declare in your `+"`result_map`"+` either a wholesale copy with `+"`meta = metadata()`"+`, or selective copies with `+"`meta foo = metadata(\"bar\")`"+` and so on. It is also possible to reference the metadata of the origin message in the `+"`result_map`"+` using the [`+"`@`"+` operator](/docs/guides/bloblang/about#metadata).
+Metadata fields that are added to messages during branch processing will not be automatically copied into the resulting message. In order to do this you should explicitly declare in your `+"`result_map`"+` either a wholesale copy with `+"`meta = metadata()`"+`, or selective copies with `+"`meta foo = metadata(\"bar\")`"+` and so on. It is also possible to reference the metadata of the origin message in the `+"`result_map`"+` using the xref:guides:bloblang/about.adoc#metadata[`+"`@`"+` operator].
 
-### Error Handling
+== Error handling
 
-If the `+"`request_map`"+` fails the child processors will not be executed. If the child processors themselves result in an (uncaught) error then the `+"`result_map`"+` will not be executed. If the `+"`result_map`"+` fails the message will remain unchanged. Under any of these conditions standard [error handling methods](/docs/configuration/error_handling) can be used in order to filter, DLQ or recover the failed messages.
+If the `+"`request_map`"+` fails the child processors will not be executed. If the child processors themselves result in an (uncaught) error then the `+"`result_map`"+` will not be executed. If the `+"`result_map`"+` fails the message will remain unchanged. Under any of these conditions standard xref:configuration:error_handling.adoc[error handling methods] can be used in order to filter, DLQ or recover the failed messages.
 
-### Conditional Branching
+== Conditional branching
 
 If the root of your request map is set to `+"`deleted()`"+` then the branch processors are skipped for the given message, this allows you to conditionally branch messages.`).
 		Example("HTTP Request", `
@@ -117,7 +119,7 @@ pipeline:
 func branchSpecFields() []*service.ConfigField {
 	return []*service.ConfigField{
 		service.NewBloblangField(branchProcFieldReqMap).
-			Description("A [Bloblang mapping](/docs/guides/bloblang/about) that describes how to create a request payload suitable for the child processors of this branch. If left empty then the branch will begin with an exact copy of the origin message (including metadata).").
+			Description("A xref:guides:bloblang/about.adoc[Bloblang mapping] that describes how to create a request payload suitable for the child processors of this branch. If left empty then the branch will begin with an exact copy of the origin message (including metadata).").
 			Examples(`root = {
 	"id": this.doc.id,
 	"content": this.doc.body.text
@@ -131,7 +133,7 @@ func branchSpecFields() []*service.ConfigField {
 		service.NewProcessorListField(branchProcFieldProcs).
 			Description("A list of processors to apply to mapped requests. When processing message batches the resulting batch must match the size and ordering of the input batch, therefore filtering, grouping should not be performed within these processors."),
 		service.NewBloblangField(branchProcFieldResMap).
-			Description("A [Bloblang mapping](/docs/guides/bloblang/about) that describes how the resulting messages from branched processing should be mapped back into the original payload. If left empty the origin message will remain unchanged (including metadata).").
+			Description("A xref:guides:bloblang/about.adoc[Bloblang mapping] that describes how the resulting messages from branched processing should be mapped back into the original payload. If left empty the origin message will remain unchanged (including metadata).").
 			Examples(`meta foo_code = metadata("code")
 root.foo_result = this`,
 				`meta = metadata()
@@ -149,7 +151,7 @@ meta = metadata().filter(v -> @.get(v.key) != null)`).
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"branch", branchProcSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchProcessor, error) {
 			b, err := newBranchFromParsed(conf, interop.UnwrapManagement(mgr))
@@ -158,9 +160,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(b), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 // Branch contains conditions and maps for transforming a batch of messages into
@@ -318,7 +317,7 @@ func (b *Branch) ProcessBatch(ctx context.Context, batch message.Batch) ([]messa
 
 	for _, e := range mapErrs {
 		batch.Get(e.index).ErrorSet(e.err)
-		b.log.Error("Branch error: %v", e.err)
+		b.log.Debug("Branch error: %v", e.err)
 	}
 
 	if mapErrs, err = b.overlayResult(batch, resultParts); err != nil {
@@ -352,7 +351,7 @@ func newBranchMapError(index int, err error) branchMapError {
 
 // createResult performs reduction and child processors to a payload. The size
 // of the payload will remain unchanged, where reduced indexes are nil. This
-// result can be overlayed onto the original message in order to complete the
+// result can be overlaid onto the original message in order to complete the
 // map.
 func (b *Branch) createResult(ctx context.Context, parts []*message.Part, referenceMsg message.Batch) ([]*message.Part, []branchMapError, error) {
 	originalLen := len(parts)

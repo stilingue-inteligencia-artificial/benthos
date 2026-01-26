@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
@@ -8,16 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 func TestEnvFunctionCaching(t *testing.T) {
 	key := "BENTHOS_TEST_BLOBLANG_FUNCTION"
-	require.NoError(t, os.Setenv(key, "foobar"))
-	t.Cleanup(func() {
-		os.Unsetenv(key)
-	})
+	t.Setenv(key, "foobar")
 
 	eCached, err := query.InitFunctionHelper("env", key)
 	require.NoError(t, err)
@@ -33,7 +32,7 @@ func TestEnvFunctionCaching(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "foobar", res)
 
-	require.NoError(t, os.Setenv(key, "barbaz"))
+	t.Setenv(key, "barbaz")
 
 	res, err = eCached.Exec(query.FunctionContext{})
 	require.NoError(t, err)

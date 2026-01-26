@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -9,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type memoryBuffer struct {
@@ -70,7 +72,7 @@ func (m *memoryBuffer) Close(ctx context.Context) error {
 }
 
 func TestStreamMemoryBuffer(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	var incr, total uint8 = 100, 50
@@ -202,7 +204,7 @@ func TestStreamMemoryBuffer(t *testing.T) {
 }
 
 func TestStreamBufferClosing(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	var incr, total uint8 = 100, 5

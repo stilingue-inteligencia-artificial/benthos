@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -8,7 +10,7 @@ import (
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -35,7 +37,7 @@ func ttlruCacheConfig() *service.ConfigSpec {
 
 This TTL is reset on both modification and access of the value. As a result, if the cache is full, and no items have expired, when adding a new item, the item with the soonest expiration will be evicted.
 
-It uses the package ` + "[`expirable`](https://github.com/hashicorp/golang-lru/v2/expirable)" + `
+It uses the package ` + "https://github.com/hashicorp/golang-lru/v2/expirable[`expirable`^]" + `
 
 The field ` + ttlruCacheFieldInitValuesLabel + ` can be used to pre-populate the memory cache with any number of key/value pairs:
 
@@ -77,7 +79,7 @@ These values can be overridden during execution.`).
 }
 
 func init() {
-	err := service.RegisterCache(
+	service.MustRegisterCache(
 		"ttlru", ttlruCacheConfig(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.Cache, error) {
 			logger := mgr.Logger().With("component", "ttlru")
@@ -87,9 +89,6 @@ func init() {
 			}
 			return f, nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func ttlruMemCacheFromConfig(conf *service.ParsedConfig, logger *service.Logger) (*ttlruCacheAdapter, error) {

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -10,8 +12,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/codec"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/codec"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -24,7 +26,7 @@ func fileOutputSpec() *service.ConfigSpec {
 		Stable().
 		Categories("Local").
 		Summary(`Writes messages to files on disk based on a chosen codec.`).
-		Description(`Messages can be written to different files by using [interpolation functions](/docs/configuration/interpolation#bloblang-queries) in the path field. However, only one file is ever open at a given time, and therefore when the path changes the previously open file is closed.`).
+		Description(`Messages can be written to different files by using xref:configuration:interpolation.adoc#bloblang-queries[interpolation functions] in the path field. However, only one file is ever open at a given time, and therefore when the path changes the previously open file is closed.`).
 		Fields(
 			service.NewInterpolatedStringField(fileOutputFieldPath).
 				Description("The file to write to, if the file does not yet exist it will be created.").
@@ -54,7 +56,7 @@ func fileOutputConfigFromParsed(pConf *service.ParsedConfig) (conf fileOutputCon
 }
 
 func init() {
-	err := service.RegisterOutput("file", fileOutputSpec(),
+	service.MustRegisterOutput("file", fileOutputSpec(),
 		func(pConf *service.ParsedConfig, res *service.Resources) (out service.Output, mif int, err error) {
 			var conf fileOutputConfig
 			if conf, err = fileOutputConfigFromParsed(pConf); err != nil {
@@ -65,9 +67,6 @@ func init() {
 			out, err = newFileWriter(conf.Path, conf.Codec, res)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------

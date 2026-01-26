@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -5,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func memoryBufferConfig() *service.ConfigSpec {
@@ -32,19 +34,19 @@ func memoryBufferConfig() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Stable().
 		Categories("Utility").
-		Summary("Stores consumed messages in memory and acknowledges them at the input level. During shutdown Benthos will make a best attempt at flushing all remaining messages before exiting cleanly.").
+		Summary("Stores consumed messages in memory and acknowledges them at the input level. During shutdown Redpanda Connect will make a best attempt at flushing all remaining messages before exiting cleanly.").
 		Description(`
 This buffer is appropriate when consuming messages from inputs that do not gracefully handle back pressure and where delivery guarantees aren't critical.
 
 This buffer has a configurable limit, where consumption will be stopped with back pressure upstream if the total size of messages in the buffer reaches this amount. Since this calculation is only an estimate, and the real size of messages in RAM is always higher, it is recommended to set the limit significantly below the amount of RAM available.
 
-## Delivery Guarantees
+== Delivery guarantees
 
 This buffer intentionally weakens the delivery guarantees of the pipeline and therefore should never be used in places where data loss is unacceptable.
 
-## Batching
+== Batching
 
-It is possible to batch up messages sent from this buffer using a [batch policy](/docs/configuration/batching#batch-policy).`).
+It is possible to batch up messages sent from this buffer using a xref:configuration:batching.adoc#batch-policy[batch policy].`).
 		Field(service.NewIntField("limit").
 			Description(`The maximum buffer size (in bytes) to allow before applying backpressure upstream.`).
 			Default(524288000)).
@@ -52,14 +54,11 @@ It is possible to batch up messages sent from this buffer using a [batch policy]
 }
 
 func init() {
-	err := service.RegisterBatchBuffer(
+	service.MustRegisterBatchBuffer(
 		"memory", memoryBufferConfig(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchBuffer, error) {
 			return newMemoryBufferFromConfig(conf, mgr)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func newMemoryBufferFromConfig(conf *service.ParsedConfig, res *service.Resources) (*memoryBuffer, error) {

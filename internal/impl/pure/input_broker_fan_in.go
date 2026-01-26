@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -7,8 +9,9 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type fanInInputBroker struct {
@@ -73,24 +76,47 @@ func newFanInInputBroker(inputs []input.Streamed) (*fanInInputBroker, error) {
 	return i, nil
 }
 
-func (i *fanInInputBroker) TransactionChan() <-chan message.Transaction {
-	return i.transactions
+func (i *fanInInputBroker) TriggerStartConsuming() {
+	i.remainingMapMut.Lock()
+	defer i.remainingMapMut.Unlock()
+
+	for _, v := range i.closables {
+		v.TriggerStartConsuming()
+	}
 }
 
-func (i *fanInInputBroker) Connected() bool {
+func (i *fanInInputBroker) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
 	i.remainingMapMut.Lock()
 	defer i.remainingMapMut.Unlock()
 
 	if len(i.remainingMap) == 0 {
-		return false
+		return nil
 	}
 
+	var results component.ConnectionTestResults
 	for index := range i.remainingMap {
-		if !i.closables[index].Connected() {
-			return false
-		}
+		results = append(results, i.closables[index].ConnectionTest(ctx)...)
 	}
-	return true
+	return results
+}
+
+func (i *fanInInputBroker) TransactionChan() <-chan message.Transaction {
+	return i.transactions
+}
+
+func (i *fanInInputBroker) ConnectionStatus() component.ConnectionStatuses {
+	i.remainingMapMut.Lock()
+	defer i.remainingMapMut.Unlock()
+
+	if len(i.remainingMap) == 0 {
+		return nil
+	}
+
+	var statuses component.ConnectionStatuses
+	for index := range i.remainingMap {
+		statuses = append(statuses, i.closables[index].ConnectionStatus()...)
+	}
+	return statuses
 }
 
 func (i *fanInInputBroker) loop() {

@@ -1,14 +1,16 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/output/batcher"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/output/batcher"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -22,9 +24,9 @@ func brokerOutputSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Stable().
 		Categories("Utility").
-		Summary(`Allows you to route messages to multiple child outputs using a range of brokering [patterns](#patterns).`).
+		Summary(`Allows you to route messages to multiple child outputs using a range of brokering <<patterns>>.`).
 		Description(`
-[Processors](/docs/components/processors/about) can be listed to apply across individual outputs or all outputs:
+xref:components:processors/about.adoc[Processors] can be listed to apply across individual outputs or all outputs:
 
 `+"```yaml"+`
 output:
@@ -42,37 +44,37 @@ output:
     - resource: general_processor
 `+"```"+``).
 		Footnotes(`
-## Patterns
+== Patterns
 
 The broker pattern determines the way in which messages are allocated and can be chosen from the following:
 
-### `+"`fan_out`"+`
+=== `+"`fan_out`"+`
 
-With the fan out pattern all outputs will be sent every message that passes through Benthos in parallel.
+With the fan out pattern all outputs will be sent every message that passes through Redpanda Connect in parallel.
 
 If an output applies back pressure it will block all subsequent messages, and if an output fails to send a message it will be retried continuously until completion or service shut down. This mechanism is in place in order to prevent one bad output from causing a larger retry loop that results in a good output from receiving unbounded message duplicates.
 
-Sometimes it is useful to disable the back pressure or retries of certain fan out outputs and instead drop messages that have failed or were blocked. In this case you can wrap outputs with a `+"[`drop_on` output](/docs/components/outputs/drop_on)"+`.
+Sometimes it is useful to disable the back pressure or retries of certain fan out outputs and instead drop messages that have failed or were blocked. In this case you can wrap outputs with a `+"xref:components:outputs/drop_on.adoc[`drop_on` output]"+`.
 
-### `+"`fan_out_fail_fast`"+`
+=== `+"`fan_out_fail_fast`"+`
 
 The same as the `+"`fan_out`"+` pattern, except that output failures will not be automatically retried. This pattern should be used with caution as busy retry loops could result in unlimited duplicates being introduced into the non-failure outputs.
 
-### `+"`fan_out_sequential`"+`
+=== `+"`fan_out_sequential`"+`
 
 Similar to the fan out pattern except outputs are written to sequentially, meaning an output is only written to once the preceding output has confirmed receipt of the same message.
 
 If an output applies back pressure it will block all subsequent messages, and if an output fails to send a message it will be retried continuously until completion or service shut down. This mechanism is in place in order to prevent one bad output from causing a larger retry loop that results in a good output from receiving unbounded message duplicates.
 
-### `+"`fan_out_sequential_fail_fast`"+`
+=== `+"`fan_out_sequential_fail_fast`"+`
 
 The same as the `+"`fan_out_sequential`"+` pattern, except that output failures will not be automatically retried. This pattern should be used with caution as busy retry loops could result in unlimited duplicates being introduced into the non-failure outputs.
 
-### `+"`round_robin`"+`
+=== `+"`round_robin`"+`
 
 With the round robin pattern each message will be assigned a single output following their order. If an output applies back pressure it will block all subsequent messages. If an output fails to send a message then the message will be re-attempted with the next input, and so on.
 
-### `+"`greedy`"+`
+=== `+"`greedy`"+`
 
 The greedy pattern results in higher output throughput at the cost of potentially disproportionate message allocations to those outputs. Each message is sent to a single output, which is determined by allowing outputs to claim messages as soon as they are able to process them. This results in certain faster outputs potentially processing more messages at the cost of slower outputs.`).
 		Fields(
@@ -81,9 +83,14 @@ The greedy pattern results in higher output throughput at the cost of potentiall
 				Advanced().
 				Default(1),
 			service.NewStringEnumField(boFieldPattern,
-				"fan_out", "fan_out_fail_fast", "fan_out_sequential", "fan_out_sequential_fail_fast", "round_robin", "greedy").
+				string(service.OutputBrokerPatternFanOut),
+				string(service.OutputBrokerPatternFanOutFailFast),
+				string(service.OutputBrokerPatternFanOutSequential),
+				string(service.OutputBrokerPatternFanOutSequentialFailFast),
+				string(service.OutputBrokerPatternRoundRobin),
+				string(service.OutputBrokerPatternGreedy)).
 				Description("The brokering pattern to use.").
-				Default("fan_out"),
+				Default(string(service.OutputBrokerPatternFanOut)),
 			service.NewOutputListField(boFieldOutputs).
 				Description("A list of child outputs to broker."),
 			service.NewBatchPolicyField(boFieldBatching),
@@ -95,7 +102,7 @@ The greedy pattern results in higher output throughput at the cost of potentiall
 var ErrBrokerNoOutputs = errors.New("attempting to create broker output type with no outputs")
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"broker", brokerOutputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			var bi output.Streamed
@@ -105,9 +112,6 @@ func init() {
 			out = interop.NewUnwrapInternalOutput(bi)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -140,10 +144,10 @@ func brokerOutputFromParsed(conf *service.ParsedConfig, res *service.Resources) 
 		}
 	}
 
-	_, isRetryWrapped := map[string]struct{}{
-		"fan_out":            {},
-		"fan_out_sequential": {},
-	}[pattern]
+	_, isRetryWrapped := map[service.OutputBrokerPatternType]struct{}{
+		service.OutputBrokerPatternFanOut:           {},
+		service.OutputBrokerPatternFanOutSequential: {},
+	}[service.OutputBrokerPatternType(pattern)]
 
 	var outputs []output.Streamed
 	{
@@ -191,14 +195,14 @@ func brokerOutputFromParsed(conf *service.ParsedConfig, res *service.Resources) 
 	}
 
 	var b output.Streamed
-	switch pattern {
-	case "fan_out", "fan_out_fail_fast":
+	switch service.OutputBrokerPatternType(pattern) {
+	case service.OutputBrokerPatternFanOut, service.OutputBrokerPatternFanOutFailFast:
 		b, err = newFanOutOutputBroker(outputs)
-	case "fan_out_sequential", "fan_out_sequential_fail_fast":
+	case service.OutputBrokerPatternFanOutSequential, service.OutputBrokerPatternFanOutSequentialFailFast:
 		b, err = newFanOutSequentialOutputBroker(outputs)
-	case "round_robin":
+	case service.OutputBrokerPatternRoundRobin:
 		b, err = newRoundRobinOutputBroker(outputs)
-	case "greedy":
+	case service.OutputBrokerPatternGreedy:
 		b, err = newGreedyOutputBroker(outputs)
 	default:
 		return nil, fmt.Errorf("broker pattern was not recognised: %v", pattern)

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs_test
 
 import (
@@ -9,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 func TestSecretScrubbingYAML(t *testing.T) {
@@ -1011,6 +1013,17 @@ testlintfooinput:
   foo1: lint me please`,
 			res: []docs.Lint{
 				docs.NewLintError(3, docs.LintCustom, errors.New("this is a custom lint")),
+			},
+		},
+		{
+			name:      "unknown component",
+			inputType: docs.TypeInput,
+			inputConf: `
+testlintfoounknowninput:
+  # comment here
+  foo1: hello world # And what's this?`,
+			res: []docs.Lint{
+				docs.NewLintWarning(2, docs.LintComponentMissing, "unable to infer component type: testlintfoounknowninput"),
 			},
 		},
 	}

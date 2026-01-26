@@ -1,7 +1,9 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,16 +13,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestGrokAllParts(t *testing.T) {
 	conf, err := testutil.ProcessorFromYAML(`
 grok:
   expressions:
-    - "%%{WORD:first},%%{INT:second:int}"
+    - "%{WORD:first},%{INT:second:int}"
 `)
 	require.NoError(t, err)
 
@@ -34,7 +36,7 @@ grok:
 		[]byte(`foo,1`),
 		[]byte(`foo,2`),
 	})
-	msgs, res := gSet.ProcessBatch(context.Background(), msgIn)
+	msgs, res := gSet.ProcessBatch(t.Context(), msgIn)
 	if len(msgs) != 1 {
 		t.Fatal("Wrong count of messages")
 	}
@@ -91,19 +93,19 @@ func TestGrok(t *testing.T) {
 			if test.definitions == nil {
 				test.definitions = map[string]any{}
 			}
-			conf, err := testutil.ProcessorFromYAML(`
+			conf, err := testutil.ProcessorFromYAML(fmt.Sprintf(`
 grok:
   expressions:
     - '%v'
   pattern_definitions: %v
-`, test.pattern, gabs.Wrap(test.definitions).String())
+`, test.pattern, gabs.Wrap(test.definitions).String()))
 			require.NoError(t, err)
 
 			gSet, err := mock.NewManager().NewProcessor(conf)
 			require.NoError(t, err)
 
 			inMsg := message.QuickBatch([][]byte{[]byte(test.input)})
-			msgs, _ := gSet.ProcessBatch(context.Background(), inMsg)
+			msgs, _ := gSet.ProcessBatch(t.Context(), inMsg)
 			require.Len(t, msgs, 1)
 
 			assert.Equal(t, test.output, string(msgs[0].Get(0).AsBytes()))
@@ -115,19 +117,19 @@ grok:
 			if test.definitions == nil {
 				test.definitions = map[string]any{}
 			}
-			conf, err := testutil.ProcessorFromYAML(`
+			conf, err := testutil.ProcessorFromYAML(fmt.Sprintf(`
 grok:
   expressions:
     - '%v'
   pattern_definitions: %v
-`, test.pattern, gabs.Wrap(test.definitions).String())
+`, test.pattern, gabs.Wrap(test.definitions).String()))
 			require.NoError(t, err)
 
 			gSet, err := mock.NewManager().NewProcessor(conf)
 			require.NoError(t, err)
 
 			inMsg := message.QuickBatch([][]byte{[]byte(test.input)})
-			msgs, _ := gSet.ProcessBatch(context.Background(), inMsg)
+			msgs, _ := gSet.ProcessBatch(t.Context(), inMsg)
 			require.Len(t, msgs, 1)
 
 			assert.Equal(t, test.output, string(msgs[0].Get(0).AsBytes()))
@@ -144,25 +146,25 @@ FOONESTED %{INT:nested.first:int} %{WORD:nested.second} %{WORD:nested.third}
 `), 0o777)
 	require.NoError(t, err)
 
-	conf, err := testutil.ProcessorFromYAML(`
+	conf, err := testutil.ProcessorFromYAML(fmt.Sprintf(`
 grok:
   expressions:
     - "%%{FOONESTED}"
     - "%%{FOOFLAT}"
   pattern_paths: [ %v ]
-`, tmpDir)
+`, tmpDir))
 	require.NoError(t, err)
 
 	gSet, err := mock.NewManager().NewProcessor(conf)
 	require.NoError(t, err)
 
 	inMsg := message.QuickBatch([][]byte{[]byte(`hello foo bar`)})
-	msgs, _ := gSet.ProcessBatch(context.Background(), inMsg)
+	msgs, _ := gSet.ProcessBatch(t.Context(), inMsg)
 	require.Len(t, msgs, 1)
 	assert.Equal(t, `{"first":"hello","second":"foo","third":"bar"}`, string(msgs[0].Get(0).AsBytes()))
 
 	inMsg = message.QuickBatch([][]byte{[]byte(`10 foo bar`)})
-	msgs, _ = gSet.ProcessBatch(context.Background(), inMsg)
+	msgs, _ = gSet.ProcessBatch(t.Context(), inMsg)
 	require.Len(t, msgs, 1)
 	assert.Equal(t, `{"nested":{"first":10,"second":"foo","third":"bar"}}`, string(msgs[0].Get(0).AsBytes()))
 }

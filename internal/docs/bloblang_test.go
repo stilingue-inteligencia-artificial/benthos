@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs_test
 
 import (
@@ -5,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 func TestLintBloblangMapping(t *testing.T) {

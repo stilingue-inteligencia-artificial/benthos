@@ -1,13 +1,16 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
+	"sync"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type roundRobinOutputBroker struct {
@@ -16,7 +19,8 @@ type roundRobinOutputBroker struct {
 	outputTSChans []chan message.Transaction
 	outputs       []output.Streamed
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newRoundRobinOutputBroker(outputs []output.Streamed) (*roundRobinOutputBroker, error) {
@@ -40,18 +44,21 @@ func (o *roundRobinOutputBroker) Consume(ts <-chan message.Transaction) error {
 		return component.ErrAlreadyStarted
 	}
 	o.transactions = ts
-
-	go o.loop()
 	return nil
 }
 
-func (o *roundRobinOutputBroker) Connected() bool {
+func (o *roundRobinOutputBroker) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
 	for _, out := range o.outputs {
-		if !out.Connected() {
-			return false
-		}
+		s = append(s, out.ConnectionTest(ctx)...)
 	}
-	return true
+	return
+}
+
+func (o *roundRobinOutputBroker) ConnectionStatus() (s component.ConnectionStatuses) {
+	for _, out := range o.outputs {
+		s = append(s, out.ConnectionStatus()...)
+	}
+	return
 }
 
 func (o *roundRobinOutputBroker) loop() {
@@ -86,6 +93,15 @@ func (o *roundRobinOutputBroker) loop() {
 			i = 0
 		}
 	}
+}
+
+func (o *roundRobinOutputBroker) TriggerStartConsuming() {
+	o.startOnce.Do(func() {
+		for _, to := range o.outputs {
+			to.TriggerStartConsuming()
+		}
+		go o.loop()
+	})
 }
 
 func (o *roundRobinOutputBroker) TriggerCloseNow() {

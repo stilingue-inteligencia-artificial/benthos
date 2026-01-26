@@ -1,26 +1,29 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"reject_errored", service.NewConfigSpec().
 			Stable().
 			Categories("Utility").
-			Summary(`Rejects messages that have failed their processing steps, resulting in nack behaviour at the input level, otherwise sends them to a child output.`).
+			Summary(`Rejects messages that have failed their processing steps, resulting in nack behavior at the input level, otherwise sends them to a child output.`).
 			Description(`
 The routing of messages rejected by this output depends on the type of input it came from. For inputs that support propagating nacks upstream such as AMQP or NATS the message will be nacked. However, for inputs that are sequential such as files or Kafka the messages will simply be reprocessed from scratch.`).
 			Example(
@@ -47,7 +50,7 @@ output:
 			Example(
 				"DLQing Failed Messages",
 				`
-Another use case for this output is to send failed messages straight into a dead-letter queue. We use it within a [fallback output](/docs/components/outputs/fallback) that allows us to specify where these failed messages should go to next.`,
+Another use case for this output is to send failed messages straight into a dead-letter queue. You use it within a xref:components:outputs/fallback.adoc[fallback output] that allows you to specify where these failed messages should go to next.`,
 				`
 pipeline:
   processors:
@@ -76,9 +79,6 @@ output:
 			out = interop.NewUnwrapInternalOutput(w)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -106,7 +106,8 @@ type rejectErroredBroker struct {
 	outputTSChan chan message.Transaction
 	output       output.Streamed
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newRejectErroredBroker(output output.Streamed, res *service.Resources) (*rejectErroredBroker, error) {
@@ -131,15 +132,15 @@ func (t *rejectErroredBroker) Consume(ts <-chan message.Transaction) error {
 		return component.ErrAlreadyStarted
 	}
 	t.transactions = ts
-
-	go t.loop()
 	return nil
 }
 
-// Connected returns a boolean indicating whether this output is currently
-// connected to its target.
-func (t *rejectErroredBroker) Connected() bool {
-	return t.output.Connected()
+func (t *rejectErroredBroker) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return t.output.ConnectionTest(ctx)
+}
+
+func (t *rejectErroredBroker) ConnectionStatus() component.ConnectionStatuses {
+	return t.output.ConnectionStatus()
 }
 
 //------------------------------------------------------------------------------
@@ -264,6 +265,13 @@ func (t *rejectErroredBroker) loop() {
 			return
 		}
 	}
+}
+
+func (t *rejectErroredBroker) TriggerStartConsuming() {
+	t.startOnce.Do(func() {
+		t.output.TriggerStartConsuming()
+		go t.loop()
+	})
 }
 
 func (t *rejectErroredBroker) TriggerCloseNow() {

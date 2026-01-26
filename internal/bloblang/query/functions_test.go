@@ -1,15 +1,20 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestFunctions(t *testing.T) {
@@ -241,6 +246,33 @@ func TestFunctionTargets(t *testing.T) {
 	}
 }
 
+func TestUUIDV7Function(t *testing.T) {
+	e, err := InitFunctionHelper("uuid_v7")
+	require.NoError(t, err)
+
+	res, err := e.Exec(FunctionContext{})
+	require.NoError(t, err)
+	require.IsType(t, "", res)
+	u7 := uuid.FromStringOrNil(res.(string))
+	assert.Equal(t, u7.Version(), byte(7))
+}
+
+func TestUUIDV7FunctionAtTime(t *testing.T) {
+	ts := time.Now().Add(-5 * time.Hour)
+	e, err := InitFunctionHelper("uuid_v7", ts)
+	require.NoError(t, err)
+
+	res, err := e.Exec(FunctionContext{})
+	require.NoError(t, err)
+	require.IsType(t, "", res)
+	u7 := uuid.FromStringOrNil(res.(string))
+	u7ts, err := uuid.TimestampFromV7(u7)
+	require.NoError(t, err)
+	actual, err := u7ts.Time()
+	require.NoError(t, err)
+	assert.Equal(t, ts.Truncate(time.Millisecond), actual, "expected: %s, got: %s", ts, actual)
+}
+
 func TestNanoidFunction(t *testing.T) {
 	e, err := InitFunctionHelper("nanoid")
 	require.NoError(t, err)
@@ -456,16 +488,16 @@ func TestRandomIntDynamicParallel(t *testing.T) {
 func TestRandomIntWithinRange(t *testing.T) {
 	tsFn, err := InitFunctionHelper("timestamp_unix_nano")
 	require.NoError(t, err)
-	var min, max int64 = 10, 20
-	e, err := InitFunctionHelper("random_int", tsFn, min, max)
+	var minV, maxV int64 = 10, 20
+	e, err := InitFunctionHelper("random_int", tsFn, minV, maxV)
 	require.NoError(t, err)
 
 	for i := 0; i < 1000; i++ {
 		res, err := e.Exec(FunctionContext{})
 		require.NoError(t, err)
 		require.IsType(t, int64(0), res)
-		assert.GreaterOrEqual(t, res.(int64), min)
-		assert.LessOrEqual(t, res.(int64), max)
+		assert.GreaterOrEqual(t, res.(int64), minV)
+		assert.LessOrEqual(t, res.(int64), maxV)
 	}
 
 	// Create a new random_int function with one single possible value
@@ -490,4 +522,109 @@ func TestRandomIntWithinRange(t *testing.T) {
 	// Create a new random_int function with a max that will overflow
 	_, err = InitFunctionHelper("random_int", tsFn, 0, math.MaxInt64)
 	require.Error(t, err)
+}
+
+func TestErrorFunctions(t *testing.T) {
+	tests := []struct {
+		name           string
+		fn             string
+		err            string
+		componentName  string
+		componentLabel string
+		componentPath  []string
+		exp            string
+	}{
+		{
+			name: "error() returns the message error if set",
+			fn:   "error",
+			err:  "kaboom!",
+			exp:  "kaboom!",
+		},
+		{
+			name: "error() returns null for non-errored messages",
+			fn:   "error",
+		},
+		{
+			name: "errored() returns true for errored messages",
+			fn:   "errored",
+			err:  "kaboom!",
+		},
+		{
+			name: "errored() returns false for non-errored messages",
+			fn:   "errored",
+		},
+		{
+			name:          "error_source_name() returns the component name when the message is errored",
+			fn:            "error_source_name",
+			err:           "kaboom!",
+			componentName: "foobar",
+			exp:           "foobar",
+		},
+		{
+			name: "error_source_name() returns null for non-errored messages",
+			fn:   "error_source_name",
+		},
+		{
+			name:           "error_source_label() returns the component label when the message is errored",
+			fn:             "error_source_label",
+			err:            "kaboom!",
+			componentLabel: "foobar",
+			exp:            "foobar",
+		},
+		{
+			name: "error_source_label() returns null for non-errored messages",
+			fn:   "error_source_label",
+		},
+		{
+			name:          "error_source_path() returns the component path when the message is errored",
+			fn:            "error_source_path",
+			err:           "kaboom!",
+			componentPath: []string{"foo", "bar"},
+			exp:           "foo.bar",
+		},
+		{
+			name: "error_source_path() returns null for non-errored messages",
+			fn:   "error_source_path",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			batch := message.QuickBatch(nil)
+			part := message.NewPart([]byte("foobar"))
+			if test.err != "" {
+				part.ErrorSet(&ComponentError{
+					Err:   errors.New(test.err),
+					Name:  test.componentName,
+					Label: test.componentLabel,
+					Path:  test.componentPath,
+				})
+			}
+			batch = append(batch, part)
+
+			e, err := InitFunctionHelper(test.fn)
+			require.NoError(t, err)
+			res, err := e.Exec(FunctionContext{
+				Index:    0,
+				MsgBatch: batch,
+			})
+			require.NoError(t, err)
+
+			if test.fn == "errored" {
+				b, ok := res.(bool)
+				require.True(t, ok)
+				assert.Equal(t, b, test.err != "")
+				return
+			}
+
+			if test.err == "" {
+				assert.Empty(t, res)
+				return
+			}
+
+			str, ok := res.(string)
+			require.True(t, ok)
+			assert.Equal(t, test.exp, str)
+		})
+	}
 }

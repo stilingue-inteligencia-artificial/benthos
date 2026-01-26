@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -6,8 +8,8 @@ import (
 	"io"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/scanner"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // ScannerSourceDetails contains exclusively optional information which could be
@@ -215,6 +217,7 @@ func (s *OwnedScannerCreator) Create(rdr io.ReadCloser, aFn AckFunc, details *Sc
 	return &OwnedScanner{strm: is}, nil
 }
 
+// Close closes the scanner.
 func (s *OwnedScannerCreator) Close(ctx context.Context) error {
 	return s.rdr.Close(ctx)
 }

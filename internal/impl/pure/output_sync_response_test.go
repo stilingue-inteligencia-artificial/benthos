@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,12 +8,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/transaction"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/transaction"
 )
 
 func TestSyncResponseWriter(t *testing.T) {
-	wctx := context.Background()
+	wctx := t.Context()
 
 	impl := transaction.NewResultStore()
 	w := SyncResponseWriter{}
@@ -19,7 +21,7 @@ func TestSyncResponseWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.WithValue(context.Background(), transaction.ResultStoreKey, impl)
+	ctx := context.WithValue(t.Context(), transaction.ResultStoreKey, impl)
 
 	msg := message.QuickBatch(nil)
 	p := message.NewPart([]byte("foo"))

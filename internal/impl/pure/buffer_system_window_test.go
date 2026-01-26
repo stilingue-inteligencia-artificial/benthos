@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -13,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/bloblang"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestSystemWindowBufferConfigs(t *testing.T) {
@@ -114,8 +116,9 @@ system_window:
 			strm, err := env.Build()
 			require.NoError(t, err)
 
-			cancelledCtx, done := context.WithCancel(context.Background())
+			cancelledCtx, done := context.WithCancel(t.Context())
 			done()
+
 			err = strm.Run(cancelledCtx)
 			if test.buildErrContains != "" {
 				require.Error(t, err)
@@ -247,7 +250,7 @@ func TestSystemWindowWritePurge(t *testing.T) {
 	}, time.Second, 0, 0, 0, nil)
 	require.NoError(t, err)
 
-	err = w.WriteBatch(context.Background(), service.MessageBatch{
+	err = w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"1","ts":7.999999999}`)),
 		service.NewMessage([]byte(`{"id":"2","ts":8.5}`)),
 		service.NewMessage([]byte(`{"id":"3","ts":9.5}`)),
@@ -256,7 +259,7 @@ func TestSystemWindowWritePurge(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, w.pending, 4)
 
-	err = w.WriteBatch(context.Background(), service.MessageBatch{
+	err = w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"5","ts":10.6}`)),
 		service.NewMessage([]byte(`{"id":"6","ts":10.7}`)),
 		service.NewMessage([]byte(`{"id":"7","ts":10.8}`)),
@@ -276,7 +279,7 @@ func TestSystemWindowCreation(t *testing.T) {
 	}, time.Second, 0, 0, 0, nil)
 	require.NoError(t, err)
 
-	err = w.WriteBatch(context.Background(), service.MessageBatch{
+	err = w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"1","ts":7.999999999}`)),
 		service.NewMessage([]byte(`{"id":"2","ts":8.5}`)),
 		service.NewMessage([]byte(`{"id":"3","ts":9.5}`)),
@@ -285,7 +288,7 @@ func TestSystemWindowCreation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, w.pending, 4)
 
-	resBatch, _, err := w.ReadBatch(context.Background())
+	resBatch, _, err := w.ReadBatch(t.Context())
 	require.NoError(t, err)
 
 	require.Len(t, resBatch, 1)
@@ -298,7 +301,7 @@ func TestSystemWindowCreation(t *testing.T) {
 
 	currentTS = time.Unix(10, 999999100).UTC()
 
-	resBatch, _, err = w.ReadBatch(context.Background())
+	resBatch, _, err = w.ReadBatch(t.Context())
 	require.NoError(t, err)
 
 	require.Len(t, resBatch, 1)
@@ -311,14 +314,14 @@ func TestSystemWindowCreation(t *testing.T) {
 
 	currentTS = time.Unix(11, 999999100).UTC()
 
-	smallWaitCtx, done := context.WithTimeout(context.Background(), time.Millisecond*50)
+	smallWaitCtx, done := context.WithTimeout(t.Context(), time.Millisecond*50)
 	resBatch, _, err = w.ReadBatch(smallWaitCtx)
 	done()
 	require.Error(t, err)
 	assert.Empty(t, resBatch)
 	assert.Equal(t, "1970-01-01T00:00:12Z", w.latestFlushedWindowEnd.Format(time.RFC3339Nano))
 
-	err = w.WriteBatch(context.Background(), service.MessageBatch{
+	err = w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"5","ts":8.1}`)),
 		service.NewMessage([]byte(`{"id":"6","ts":9.999999999}`)),
 		service.NewMessage([]byte(`{"id":"7","ts":10}`)),
@@ -349,7 +352,7 @@ func TestSystemWindowCreationSliding(t *testing.T) {
 	require.NoError(t, err)
 	w.latestFlushedWindowEnd = time.Unix(9, 500_000_000)
 
-	err = w.WriteBatch(context.Background(), service.MessageBatch{
+	err = w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"1","ts":9.85}`)),
 		service.NewMessage([]byte(`{"id":"2","ts":9.9}`)),
 		service.NewMessage([]byte(`{"id":"3","ts":10.15}`)),
@@ -373,7 +376,7 @@ func TestSystemWindowCreationSliding(t *testing.T) {
 		assert.Equal(t, exp, string(msgBytes))
 	}
 
-	resBatch, _, err := w.ReadBatch(context.Background())
+	resBatch, _, err := w.ReadBatch(t.Context())
 	require.NoError(t, err)
 
 	assert.Len(t, resBatch, 2)
@@ -381,7 +384,7 @@ func TestSystemWindowCreationSliding(t *testing.T) {
 	assertBatchIndex(1, resBatch, `{"id":"2","ts":9.9}`)
 
 	currentTS = time.Unix(10, 500000000).UTC()
-	resBatch, _, err = w.ReadBatch(context.Background())
+	resBatch, _, err = w.ReadBatch(t.Context())
 	require.NoError(t, err)
 
 	assert.Len(t, resBatch, 5)
@@ -392,7 +395,7 @@ func TestSystemWindowCreationSliding(t *testing.T) {
 	assertBatchIndex(4, resBatch, `{"id":"5","ts":10.5}`)
 
 	currentTS = time.Unix(11, 0).UTC()
-	resBatch, _, err = w.ReadBatch(context.Background())
+	resBatch, _, err = w.ReadBatch(t.Context())
 	require.NoError(t, err)
 
 	assert.Len(t, resBatch, 5)
@@ -403,7 +406,7 @@ func TestSystemWindowCreationSliding(t *testing.T) {
 	assertBatchIndex(4, resBatch, `{"id":"7","ts":10.9}`)
 
 	currentTS = time.Unix(11, 500_000_000).UTC()
-	resBatch, _, err = w.ReadBatch(context.Background())
+	resBatch, _, err = w.ReadBatch(t.Context())
 	require.NoError(t, err)
 
 	assert.Len(t, resBatch, 4)
@@ -413,7 +416,7 @@ func TestSystemWindowCreationSliding(t *testing.T) {
 	assertBatchIndex(3, resBatch, `{"id":"9","ts":11.35}`)
 
 	currentTS = time.Unix(12, 0).UTC()
-	resBatch, _, err = w.ReadBatch(context.Background())
+	resBatch, _, err = w.ReadBatch(t.Context())
 	require.NoError(t, err)
 
 	assert.Len(t, resBatch, 4)
@@ -436,7 +439,7 @@ func TestSystemWindowAckOneToMany(t *testing.T) {
 	var ackCalled int
 	var ackErr error
 
-	require.NoError(t, w.WriteBatch(context.Background(), service.MessageBatch{
+	require.NoError(t, w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"1","ts":9.5}`)),
 		service.NewMessage([]byte(`{"id":"2","ts":10.5}`)),
 		service.NewMessage([]byte(`{"id":"3","ts":11.5}`)),
@@ -450,7 +453,7 @@ func TestSystemWindowAckOneToMany(t *testing.T) {
 
 	ackFuncs := []service.AckFunc{}
 
-	resBatch, aFn, err := w.ReadBatch(context.Background())
+	resBatch, aFn, err := w.ReadBatch(t.Context())
 	require.NoError(t, err)
 	require.Len(t, resBatch, 1)
 	msgBytes, err := resBatch[0].AsBytes()
@@ -460,7 +463,7 @@ func TestSystemWindowAckOneToMany(t *testing.T) {
 
 	currentTS = time.Unix(11, 0).UTC()
 
-	resBatch, aFn, err = w.ReadBatch(context.Background())
+	resBatch, aFn, err = w.ReadBatch(t.Context())
 	require.NoError(t, err)
 	require.Len(t, resBatch, 1)
 	msgBytes, err = resBatch[0].AsBytes()
@@ -470,7 +473,7 @@ func TestSystemWindowAckOneToMany(t *testing.T) {
 
 	currentTS = time.Unix(12, 0).UTC()
 
-	resBatch, aFn, err = w.ReadBatch(context.Background())
+	resBatch, aFn, err = w.ReadBatch(t.Context())
 	require.NoError(t, err)
 	require.Len(t, resBatch, 1)
 	msgBytes, err = resBatch[0].AsBytes()
@@ -482,15 +485,15 @@ func TestSystemWindowAckOneToMany(t *testing.T) {
 	assert.Equal(t, 0, ackCalled)
 	assert.NoError(t, ackErr)
 
-	require.NoError(t, ackFuncs[0](context.Background(), nil))
+	require.NoError(t, ackFuncs[0](t.Context(), nil))
 	assert.Equal(t, 0, ackCalled)
 	assert.NoError(t, ackErr)
 
-	require.NoError(t, ackFuncs[1](context.Background(), errors.New("custom error")))
+	require.NoError(t, ackFuncs[1](t.Context(), errors.New("custom error")))
 	assert.Equal(t, 0, ackCalled)
 	assert.NoError(t, ackErr)
 
-	require.NoError(t, ackFuncs[2](context.Background(), nil))
+	require.NoError(t, ackFuncs[2](t.Context(), nil))
 	assert.Equal(t, 1, ackCalled)
 	assert.EqualError(t, ackErr, "custom error")
 }
@@ -507,28 +510,28 @@ func TestSystemWindowAckManyToOne(t *testing.T) {
 
 	ackCalls := map[int]error{}
 
-	require.NoError(t, w.WriteBatch(context.Background(), service.MessageBatch{
+	require.NoError(t, w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"1","ts":9.5}`)),
 	}, func(ctx context.Context, err error) error {
 		ackCalls[0] = err
 		return nil
 	}))
 
-	require.NoError(t, w.WriteBatch(context.Background(), service.MessageBatch{
+	require.NoError(t, w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"2","ts":9.6}`)),
 	}, func(ctx context.Context, err error) error {
 		ackCalls[1] = err
 		return nil
 	}))
 
-	require.NoError(t, w.WriteBatch(context.Background(), service.MessageBatch{
+	require.NoError(t, w.WriteBatch(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte(`{"id":"3","ts":9.7}`)),
 	}, func(ctx context.Context, err error) error {
 		ackCalls[2] = err
 		return nil
 	}))
 
-	resBatch, aFn, err := w.ReadBatch(context.Background())
+	resBatch, aFn, err := w.ReadBatch(t.Context())
 	require.NoError(t, err)
 	require.Len(t, resBatch, 3)
 
@@ -545,7 +548,7 @@ func TestSystemWindowAckManyToOne(t *testing.T) {
 	assert.Equal(t, `{"id":"3","ts":9.7}`, string(msgBytes))
 
 	assert.Empty(t, ackCalls)
-	require.NoError(t, aFn(context.Background(), errors.New("custom error")))
+	require.NoError(t, aFn(t.Context(), errors.New("custom error")))
 
 	assert.Equal(t, map[int]error{
 		0: errors.New("custom error"),
@@ -573,7 +576,7 @@ func TestSystemWindowParallelReadAndWrites(t *testing.T) {
 		<-startChan
 		for i := 0; i < 1000; i++ {
 			msg := fmt.Sprintf(`{"id":"%v","ts":10.5}`, i)
-			writeErr := w.WriteBatch(context.Background(), service.MessageBatch{
+			writeErr := w.WriteBatch(t.Context(), service.MessageBatch{
 				service.NewMessage([]byte(msg)),
 			}, func(ctx context.Context, err error) error {
 				return nil
@@ -584,7 +587,7 @@ func TestSystemWindowParallelReadAndWrites(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		<-startChan
-		_, _, readErr := w.ReadBatch(context.Background())
+		_, _, readErr := w.ReadBatch(t.Context())
 		require.NoError(t, readErr)
 	}()
 
@@ -593,7 +596,7 @@ func TestSystemWindowParallelReadAndWrites(t *testing.T) {
 }
 
 func TestSystemWindowOwnership(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	mapping, err := bloblang.Parse(`root = this.ts`)
 	require.NoError(t, err)

@@ -1,15 +1,17 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package interop
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 // UnwrapOwnedInput attempts to unwrap a public owned component into an internal
@@ -39,6 +41,11 @@ func NewUnwrapInternalInput(s input.Streamed) *UnwrapInternalInput {
 // Unwrap in order to obtain the underlying Streamed implementation.
 func (u *UnwrapInternalInput) Unwrap() input.Streamed {
 	return u.s
+}
+
+// ConnectionTest does nothing, use Unwrap instead.
+func (u *UnwrapInternalInput) ConnectionTest() component.ConnectionTestResults {
+	return nil
 }
 
 // Connect does nothing, use Unwrap instead.
@@ -119,7 +126,7 @@ type UnwrapInternalOutput struct {
 	s output.Streamed
 }
 
-// NewUnwrapInternalOutput returns wraps an internal component implementation.
+// NewUnwrapInternalOutput wraps an internal component implementation.
 func NewUnwrapInternalOutput(s output.Streamed) *UnwrapInternalOutput {
 	return &UnwrapInternalOutput{s: s}
 }

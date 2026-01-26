@@ -1,13 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestCachedHappy(t *testing.T) {
@@ -30,7 +31,7 @@ processors:
 	proc, err := newCachedProcessorFromParsedConf(mRes, conf)
 	require.NoError(t, err)
 
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	resBatchA1, err := proc.Process(tCtx, service.NewMessage([]byte("keya")))
 	require.NoError(t, err)
@@ -107,7 +108,7 @@ processors:
 	proc, err := newCachedProcessorFromParsedConf(mRes, conf)
 	require.NoError(t, err)
 
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	msg := service.NewMessage([]byte(``))
 	msg.MetaSet("key", "keya")
@@ -172,7 +173,7 @@ processors:
 	proc, err := newCachedProcessorFromParsedConf(mRes, conf)
 	require.NoError(t, err)
 
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	resBatchA1, err := proc.Process(tCtx, service.NewMessage([]byte("keya")))
 	require.NoError(t, err)
@@ -221,7 +222,7 @@ processors:
 	proc, err := newCachedProcessorFromParsedConf(mRes, conf)
 	require.NoError(t, err)
 
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	resBatchA1, err := proc.Process(tCtx, service.NewMessage([]byte("keya")))
 	assert.EqualError(t, err, `failed to parse ttl expression: time: missing unit in duration "4"`)

@@ -1,15 +1,17 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -19,7 +21,7 @@ const (
 
 func init() {
 	compAlgs := CompressionAlgsList()
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"compress", service.NewConfigSpec().
 			Categories("Parsing").
 			Stable().
@@ -51,9 +53,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedProcessor("compress", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type compressProc struct {

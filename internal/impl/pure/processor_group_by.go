@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -5,13 +7,13 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -23,14 +25,14 @@ func groupByProcSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Categories("Composition").
 		Stable().
-		Summary(`Splits a [batch of messages](/docs/configuration/batching) into N batches, where each resulting batch contains a group of messages determined by a [Bloblang query](/docs/guides/bloblang/about).`).
+		Summary(`Splits a xref:configuration:batching.adoc[batch of messages] into N batches, where each resulting batch contains a group of messages determined by a xref:guides:bloblang/about.adoc[Bloblang query].`).
 		Description(`
 Once the groups are established a list of processors are applied to their respective grouped batch, which can be used to label the batch as per their grouping. Messages that do not pass the check of any specified group are placed in their own group.
 
-The functionality of this processor depends on being applied across messages that are batched. You can find out more about batching [in this doc](/docs/configuration/batching).`).
+The functionality of this processor depends on being applied across messages that are batched. You can find out more about batching xref:configuration:batching.adoc[in this doc].`).
 		Example(
 			"Grouped Processing",
-			"Imagine we have a batch of messages that we wish to split into a group of foos and everything else, which should be sent to different output destinations based on those groupings. We also need to send the foos as a tar gzip archive. For this purpose we can use the `group_by` processor with a [`switch`](/docs/components/outputs/switch) output:",
+			"Imagine we have a batch of messages that we wish to split into a group of foos and everything else, which should be sent to different output destinations based on those groupings. We also need to send the foos as a tar gzip archive. For this purpose we can use the `group_by` processor with a xref:components:outputs/switch.adoc[`switch`] output:",
 			`
 pipeline:
   processors:
@@ -59,20 +61,20 @@ output:
 		).
 		Field(service.NewObjectListField("",
 			service.NewBloblangField(gbpFieldCheck).
-				Description("A [Bloblang query](/docs/guides/bloblang/about) that should return a boolean value indicating whether a message belongs to a given group.").
+				Description("A xref:guides:bloblang/about.adoc[Bloblang query] that should return a boolean value indicating whether a message belongs to a given group.").
 				Examples(
 					`this.type == "foo"`,
 					`this.contents.urls.contains("https://benthos.dev/")`,
 					`true`,
 				),
 			service.NewProcessorListField(gbpFieldProcessors).
-				Description("A list of [processors](/docs/components/processors/about) to execute on the newly formed group.").
+				Description("A list of xref:components:processors/about.adoc[processors] to execute on the newly formed group.").
 				Default([]any{}),
 		))
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"group_by", groupByProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			groupConfs, err := conf.FieldObjectList()
@@ -91,9 +93,6 @@ func init() {
 
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedBatchedProcessor("group_by", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type group struct {

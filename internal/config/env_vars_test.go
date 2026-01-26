@@ -1,6 +1,9 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package config
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,6 +19,8 @@ func TestEnvSwapping(t *testing.T) {
 			return "testfoo", true
 		case "BENTHOS.TEST.BAR":
 			return "test\nbar", true
+		case "BENTHOS.TEST.B64":
+			return "Zm9vYmFy", true
 		}
 		return "", false
 	}
@@ -50,10 +55,22 @@ func TestEnvSwapping(t *testing.T) {
 		"foo ${BENTHOS_TEST_THIS_DOESNT_EXIST_LOL} baz":                            {errContains: "required environment variables were not set: [BENTHOS_TEST_THIS_DOESNT_EXIST_LOL]"},
 		"foo ${BENTHOS_TEST_NOPE_A} baz ${BENTHOS_TEST_NOPE_B} buz":                {errContains: "required environment variables were not set: [BENTHOS_TEST_NOPE_A BENTHOS_TEST_NOPE_B]"},
 		"foo ${DOES_NOT_EXIST::} baz":                                              {result: "foo : baz"},
+		`${DOES_NOT_EXIST:${BENTHOS.TEST}}`:                                        {result: "${BENTHOS.TEST}"},
+		`${BENTHOS.TEST.B64|base64decode}`:                                         {result: "foobar"},
+		`${BENTHOS.TEST.B64:foo|base64decode}`:                                     {result: "foobar"},
+		`${BENTHOS.TEST.B64:|base64decode}`:                                        {result: "foobar"},
+		`${BENTHOS.TEST.B64:foo|bar|base64decode}`:                                 {result: "foobar"},
+		`${BENTHOS.TEST.B64|lolwut}`:                                               {errContains: "unknown env var decode function: lolwut"},
+		`${DOES_NOT_EXIST:|kaboom|base64decode}`:                                   {errContains: "failed to decode base64-encoded env var: illegal base64 data at input byte 0"},
+		`${BENTHOS.TEST.B64:ignoreme|base64decode}`:                                {result: "foobar"},
+		`${DOES_NOT_EXIST:Zm9vYmFy|base64decode}`:                                  {result: "foobar"},
 	}
 
 	for in, exp := range tests {
-		out, err := ReplaceEnvVariables([]byte(in), envFn)
+		r := NewReader("", nil, OptUseEnvLookupFunc(func(ctx context.Context, s string) (string, bool) {
+			return envFn(s)
+		}))
+		out, err := r.ReplaceEnvVariables(t.Context(), []byte(in))
 		if exp.errContains != "" {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), exp.errContains)

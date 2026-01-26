@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bundle
 
 import (
@@ -6,9 +8,9 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/tracer"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/tracer"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 // AllTracers is a set containing every single tracer that has been imported.
@@ -95,4 +97,39 @@ func (s *TracerSet) DocsFor(name string) (docs.ComponentSpec, bool) {
 		return docs.ComponentSpec{}, false
 	}
 	return c.spec, true
+}
+
+// Without creates a clone of the set excluding a variadic list of components.
+func (s *TracerSet) Without(names ...string) *TracerSet {
+	newSet := &TracerSet{
+		specs: map[string]tracerSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			continue
+		}
+		newSet.specs[k] = v
+	}
+	return newSet
+}
+
+// With creates a clone of the set including a variadic list of components.
+func (s *TracerSet) With(names ...string) *TracerSet {
+	newSet := &TracerSet{
+		specs: map[string]tracerSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			newSet.specs[k] = v
+		}
+	}
+	return newSet
 }

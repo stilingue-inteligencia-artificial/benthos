@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service_test
 
 import (
@@ -11,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 type fooReader struct {
@@ -76,7 +78,7 @@ output:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 	assert.Equal(t, []string{
 		`{"id":1,"purpose":"test resource inputs"}`,
 		`{"id":2,"purpose":"test resource inputs"}`,
@@ -140,7 +142,7 @@ output:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 
 	outBytes, err := os.ReadFile(outFilePath)
 	require.NoError(t, err)
@@ -149,4 +151,44 @@ output:
 {"id":2,"purpose":"test resource outputs"}
 {"id":3,"purpose":"test resource outputs"}
 `, string(outBytes))
+}
+
+type (
+	testKeyTypeA int
+	testKeyTypeB int
+)
+
+const (
+	testKeyA testKeyTypeA = iota
+	testKeyB testKeyTypeB = iota
+)
+
+func TestResourcesGenericValues(t *testing.T) {
+	res := service.MockResources()
+
+	res.SetGeneric(testKeyA, "foo")
+	res.SetGeneric(testKeyB, "bar")
+
+	_, exists := res.GetGeneric("not a key")
+	assert.False(t, exists)
+
+	v, exists := res.GetGeneric(testKeyA)
+	assert.True(t, exists)
+	assert.Equal(t, "foo", v)
+
+	v, exists = res.GetGeneric(testKeyB)
+	assert.True(t, exists)
+	assert.Equal(t, "bar", v)
+}
+
+func TestResourcesGenericGetOrSet(t *testing.T) {
+	res := service.MockResources()
+
+	v, loaded := res.GetOrSetGeneric(testKeyA, "foo")
+	assert.False(t, loaded)
+	assert.Equal(t, "foo", v)
+
+	v, loaded = res.GetOrSetGeneric(testKeyA, "bar")
+	assert.True(t, loaded)
+	assert.Equal(t, "foo", v)
 }

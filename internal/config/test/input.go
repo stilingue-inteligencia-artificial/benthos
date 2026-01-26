@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package test
 
 import (
@@ -5,9 +7,9 @@ import (
 	"io/fs"
 	"path/filepath"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 const (
@@ -31,12 +33,14 @@ func inputFields() docs.FieldSpecs {
 	}
 }
 
+// InputConfig represents the test input config.
 type InputConfig struct {
 	Content  string
 	Path     string
 	Metadata map[string]any
 }
 
+// ToMessage creates a message from an InputConfig.
 func (i InputConfig) ToMessage(fs fs.FS, dir string) (*message.Part, error) {
 	msgContent := []byte(i.Content)
 	if i.Path != "" {
@@ -55,6 +59,7 @@ func (i InputConfig) ToMessage(fs fs.FS, dir string) (*message.Part, error) {
 	return msg, nil
 }
 
+// InputFromParsed creates an InputConfig from a parsed config.
 func InputFromParsed(pConf *docs.ParsedConfig) (conf InputConfig, err error) {
 	if pConf.Contains(fieldInputContent) {
 		if conf.Content, err = pConf.FieldString(fieldInputContent); err != nil {

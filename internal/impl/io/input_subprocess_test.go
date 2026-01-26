@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
@@ -9,18 +11,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/io"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/io"
 )
 
 func readMsg(t *testing.T, tranChan <-chan message.Transaction) message.Batch {
 	t.Helper()
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*10)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	select {
@@ -39,6 +41,8 @@ func testInput(t testing.TB, confPattern string, args ...any) input.Streamed {
 
 	i, err := mock.NewManager().NewInput(iConf)
 	require.NoError(t, err)
+
+	i.TriggerStartConsuming()
 
 	return i
 }
@@ -84,7 +88,7 @@ subprocess:
 }
 
 func TestSubprocessRestarted(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	filePath := testProgram(t, `package main
@@ -136,7 +140,7 @@ subprocess:
 }
 
 func TestSubprocessCloseInBetween(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	filePath := testProgram(t, `package main

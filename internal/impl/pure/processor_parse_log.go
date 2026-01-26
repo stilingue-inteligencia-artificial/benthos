@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -10,12 +12,12 @@ import (
 	"github.com/influxdata/go-syslog/v3/rfc3164"
 	"github.com/influxdata/go-syslog/v3/rfc5424"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -31,17 +33,17 @@ func parseLogSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Categories("Parsing").
 		Stable().
-		Summary(`Parses common log [formats](#formats) into [structured data](#codecs). This is easier and often much faster than `+"[`grok`](/docs/components/processors/grok)"+`.`).
+		Summary(`Parses common log <<formats>> into <<codecs, structured data>>. This is easier and often much faster than `+"xref:components:processors/grok.adoc[`grok`]"+`.`).
 		Footnotes(`
-## Codecs
+== Codecs
 
 Currently the only supported structured data codec is `+"`json`"+`.
 
-## Formats
+== Formats
 
-### `+"`syslog_rfc5424`"+`
+=== `+"`syslog_rfc5424`"+`
 
-Attempts to parse a log following the [Syslog rfc5424](https://tools.ietf.org/html/rfc5424) spec. The resulting structured document may contain any of the following fields:
+Attempts to parse a log following the https://tools.ietf.org/html/rfc5424[Syslog RFC5424^] spec. The resulting structured document may contain any of the following fields:
 
 - `+"`message`"+` (string)
 - `+"`timestamp`"+` (string, RFC3339)
@@ -55,9 +57,9 @@ Attempts to parse a log following the [Syslog rfc5424](https://tools.ietf.org/ht
 - `+"`msgid`"+` (string)
 - `+"`structureddata`"+` (object)
 
-### `+"`syslog_rfc3164`"+`
+=== `+"`syslog_rfc3164`"+`
 
-Attempts to parse a log following the [Syslog rfc3164](https://tools.ietf.org/html/rfc3164) spec. The resulting structured document may contain any of the following fields:
+Attempts to parse a log following the https://tools.ietf.org/html/rfc3164[Syslog rfc3164] spec. The resulting structured document may contain any of the following fields:
 
 - `+"`message`"+` (string)
 - `+"`timestamp`"+` (string, RFC3339)
@@ -71,7 +73,7 @@ Attempts to parse a log following the [Syslog rfc3164](https://tools.ietf.org/ht
 `).
 		Fields(
 			service.NewStringEnumField(plpFieldFormat, "syslog_rfc5424", "syslog_rfc3164").
-				Description("A common log [format](#formats) to parse."),
+				Description("A common log <<formats, format>> to parse."),
 			service.NewBoolField(plpFieldBestEffort).
 				Description("Still returns partially parsed messages even if an error occurs.").
 				Advanced().
@@ -85,7 +87,7 @@ Attempts to parse a log following the [Syslog rfc3164](https://tools.ietf.org/ht
 				Advanced().
 				Default("current"),
 			service.NewStringField(plpFieldWithTimezone).
-				Description("Sets the strategy to decide the timezone for rfc3164 timestamps. Applicable to format `syslog_rfc3164`. This value should follow the [time.LoadLocation](https://golang.org/pkg/time/#LoadLocation) format.").
+				Description("Sets the strategy to decide the timezone for rfc3164 timestamps. Applicable to format `syslog_rfc3164`. This value should follow the https://golang.org/pkg/time/#LoadLocation[time.LoadLocation^] format.").
 				Advanced().
 				Default("UTC"),
 			service.NewStringField(plpFieldCodec).Deprecated(),
@@ -102,7 +104,7 @@ type parseLogConfig struct {
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 
 		"parse_log", parseLogSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
@@ -132,9 +134,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedProcessor("parse_log", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type parserFormat func(body []byte) (map[string]any, error)

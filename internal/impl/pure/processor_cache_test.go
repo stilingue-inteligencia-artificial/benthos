@@ -1,18 +1,19 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestCacheSet(t *testing.T) {
@@ -39,7 +40,7 @@ cache:
 		[]byte(`{"key":"1","value":"foo 3"}`),
 	})
 
-	output, res := proc.ProcessBatch(context.Background(), input)
+	output, res := proc.ProcessBatch(t.Context(), input)
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -85,7 +86,7 @@ cache:
 		[]byte(`{"key":"1","value":"foo 3"}`),
 	})
 
-	output, res := proc.ProcessBatch(context.Background(), input)
+	output, res := proc.ProcessBatch(t.Context(), input)
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -142,7 +143,7 @@ cache:
 		[]byte(`{"key":"3"}`),
 	}
 
-	output, res := proc.ProcessBatch(context.Background(), input)
+	output, res := proc.ProcessBatch(t.Context(), input)
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -187,7 +188,7 @@ cache:
 		[]byte(`{"key":"4"}`),
 	})
 
-	output, res := proc.ProcessBatch(context.Background(), input)
+	output, res := proc.ProcessBatch(t.Context(), input)
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -213,4 +214,49 @@ cache:
 
 	_, ok = mgr.Caches["foocache"]["3"]
 	require.False(t, ok)
+}
+
+func TestCacheExists(t *testing.T) {
+	mgr := mock.NewManager()
+	mgr.Caches["foocache"] = map[string]mock.CacheItem{
+		"1": {Value: "foo 1"},
+	}
+
+	conf, err := testutil.ProcessorFromYAML(`
+cache:
+  operator: exists
+  key: ${!json("key")}
+  resource: foocache
+`)
+	require.NoError(t, err)
+
+	proc, err := mgr.NewProcessor(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	input := message.QuickBatch([][]byte{
+		[]byte(`{"key":"1"}`),
+		[]byte(`{"key":"2"}`),
+	})
+	expParts := [][]byte{
+		[]byte(`true`),
+		[]byte(`false`),
+	}
+
+	output, res := proc.ProcessBatch(t.Context(), input)
+	if res != nil {
+		t.Fatal(res)
+	}
+
+	if len(output) != 1 {
+		t.Fatalf("Wrong count of result messages: %v", len(output))
+	}
+
+	if exp, act := expParts, message.GetAllBytes(output[0]); !reflect.DeepEqual(exp, act) {
+		t.Errorf("Wrong result messages: %s != %s", act, exp)
+	}
+
+	assert.NoError(t, output[0].Get(0).ErrorGet())
+	assert.NoError(t, output[0].Get(1).ErrorGet())
 }

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,7 +8,7 @@ import (
 	"io"
 	"regexp"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -29,13 +31,10 @@ func reMatchScannerSpec() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterBatchScannerCreator("re_match", reMatchScannerSpec(),
+	service.MustRegisterBatchScannerCreator("re_match", reMatchScannerSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchScannerCreator, error) {
 			return reMatchScannerFromParsed(conf)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func reMatchScannerFromParsed(conf *service.ParsedConfig) (l *reMatchScanner, err error) {

@@ -1,10 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package input
 
 import (
 	"context"
 
-	iprocessor "github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	iprocessor "github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // WithPipeline is a type that wraps both an input type and a pipeline type
@@ -51,10 +54,22 @@ func (i *WithPipeline) TransactionChan() <-chan message.Transaction {
 	return i.pipe.TransactionChan()
 }
 
-// Connected returns a boolean indicating whether this input is currently
-// connected to its target.
-func (i *WithPipeline) Connected() bool {
-	return i.in.Connected()
+// TriggerStartConsuming triggers the consumption of data.
+func (i *WithPipeline) TriggerStartConsuming() {
+	i.in.TriggerStartConsuming()
+}
+
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (i *WithPipeline) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return i.in.ConnectionTest(ctx)
+}
+
+// ConnectionStatus returns the current status of the connection of the wrapped
+// component.
+func (i *WithPipeline) ConnectionStatus() component.ConnectionStatuses {
+	return i.in.ConnectionStatus()
 }
 
 //------------------------------------------------------------------------------

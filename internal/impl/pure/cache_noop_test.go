@@ -1,13 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestNoopCacheStandard(t *testing.T) {
@@ -17,10 +18,10 @@ func TestNoopCacheStandard(t *testing.T) {
 
 	c := noopMemCache("TestNoopCacheStandard", resources.Logger())
 
-	err := c.Set(context.Background(), "foo", []byte("bar"), nil)
+	err := c.Set(t.Context(), "foo", []byte("bar"), nil)
 	require.NoError(t, err)
 
-	value, err := c.Get(context.Background(), "foo")
+	value, err := c.Get(t.Context(), "foo")
 	require.EqualError(t, err, "key does not exist")
 
 	assert.Nil(t, value)

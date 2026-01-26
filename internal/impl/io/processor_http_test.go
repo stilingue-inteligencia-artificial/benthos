@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,10 +14,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func parseYAMLProcConf(t testing.TB, formatStr string, args ...any) (conf processor.Config) {
@@ -47,7 +48,7 @@ http:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("test")}))
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("test")}))
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -100,7 +101,7 @@ http:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("foo")}))
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("foo")}))
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -113,7 +114,7 @@ http:
 		t.Errorf("Wrong metadata value: %v != %v", act, exp)
 	}
 
-	msgs, res = h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("bar")}))
+	msgs, res = h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("bar")}))
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -129,7 +130,7 @@ http:
 	// Check metadata persists.
 	msg := message.QuickBatch([][]byte{[]byte("baz")})
 	msg.Get(0).MetaSetMut("foo", "bar")
-	msgs, res = h.ProcessBatch(context.Background(), msg)
+	msgs, res = h.ProcessBatch(t.Context(), msg)
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -171,7 +172,7 @@ http:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("foo")}))
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("foo")}))
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -182,7 +183,7 @@ http:
 		t.Errorf("Wrong response code metadata: %v != %v", act, exp)
 	}
 
-	msgs, res = h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("bar")}))
+	msgs, res = h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("bar")}))
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -196,7 +197,7 @@ http:
 	// Check metadata persists.
 	msg := message.QuickBatch([][]byte{[]byte("baz")})
 	msg.Get(0).MetaSetMut("foo", "bar")
-	msgs, res = h.ProcessBatch(context.Background(), msg)
+	msgs, res = h.ProcessBatch(t.Context(), msg)
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -224,7 +225,7 @@ http:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("foo")}))
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("foo")}))
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -268,7 +269,7 @@ http:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("foo")}))
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("foo")}))
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 1, msgs[0].Len(); actC != expC {
@@ -314,7 +315,7 @@ http:
 		[]byte("quz"),
 	})
 	inputMsg.Get(0).MetaSetMut("foo", "bar")
-	msgs, res := h.ProcessBatch(context.Background(), inputMsg)
+	msgs, res := h.ProcessBatch(t.Context(), inputMsg)
 	require.NoError(t, res)
 	require.Len(t, msgs, 1)
 	require.Equal(t, 5, msgs[0].Len())
@@ -358,7 +359,7 @@ http:
 		[]byte("quz"),
 	})
 	inputMsg.Get(0).MetaSetMut("foo", "bar")
-	msgs, res := h.ProcessBatch(context.Background(), inputMsg)
+	msgs, res := h.ProcessBatch(t.Context(), inputMsg)
 	if res != nil {
 		t.Error(res)
 	} else if expC, actC := 5, msgs[0].Len(); actC != expC {
@@ -402,7 +403,7 @@ http:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{
 		[]byte("foo"),
 		[]byte("bar"),
 		[]byte("baz"),

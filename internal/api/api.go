@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package api
 
 import (
@@ -14,8 +16,8 @@ import (
 	"github.com/gorilla/mux"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 )
 
 // OptFunc applies an option to an API type during construction.
@@ -97,9 +99,15 @@ func New(
 	}
 
 	handleStackTrace := func(w http.ResponseWriter, r *http.Request) {
-		stackSlice := make([]byte, 1024*100)
-		s := runtime.Stack(stackSlice, true)
-		_, _ = w.Write(stackSlice[:s])
+		buf := make([]byte, 1024)
+		for {
+			n := runtime.Stack(buf, true)
+			if n < len(buf) {
+				_, _ = w.Write(buf[:n])
+				return
+			}
+			buf = make([]byte, 2*len(buf))
+		}
 	}
 
 	handlePrintJSONConfig := func(w http.ResponseWriter, r *http.Request) {

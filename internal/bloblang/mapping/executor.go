@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package mapping
 
 import (
@@ -5,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 // Message is an interface type to be given to a query function, it allows the

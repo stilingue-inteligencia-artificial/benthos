@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
@@ -7,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
 )
 
 func TestSTDINClose(t *testing.T) {
@@ -17,7 +19,9 @@ func TestSTDINClose(t *testing.T) {
 	s, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	s.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	s.TriggerStopConsuming()

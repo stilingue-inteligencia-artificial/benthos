@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -7,12 +9,12 @@ import (
 
 	jmespath "github.com/jmespath/go-jmespath"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -23,11 +25,13 @@ func jmpProcSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Categories("Mapping").
 		Stable().
-		Summary("Executes a [JMESPath query](http://jmespath.org/) on JSON documents and replaces the message with the resulting document.").
+		Summary("Executes a http://jmespath.org/[JMESPath query] on JSON documents and replaces the message with the resulting document.").
 		Description(`
-:::note Try out Bloblang
-For better performance and improved capabilities try out native Benthos mapping with the [`+"`mapping`"+` processor](/docs/components/processors/mapping).
-:::
+[TIP]
+.Try out Bloblang
+====
+For better performance and improved capabilities try native Redpanda Connect mapping with the xref:components:processors/mapping.adoc[`+"`mapping`"+` processor].
+====
 `).
 		Example("Mapping", `
 When receiving JSON documents of the form:
@@ -62,7 +66,7 @@ pipeline:
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"jmespath", jmpProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			queryStr, err := conf.FieldString(jmpFieldQuery)
@@ -78,9 +82,6 @@ func init() {
 
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedProcessor("jmespath", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type jmespathProc struct {

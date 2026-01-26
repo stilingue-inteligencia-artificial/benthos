@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -8,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestBloblangCrossfire(t *testing.T) {
@@ -44,7 +46,7 @@ func TestBloblangCrossfire(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outMsgs, res := proc.ProcessBatch(context.Background(), msg.ShallowCopy())
+	outMsgs, res := proc.ProcessBatch(t.Context(), msg.ShallowCopy())
 	require.NoError(t, res)
 	require.Len(t, outMsgs, 1)
 
@@ -56,12 +58,12 @@ func TestBloblangCrossfire(t *testing.T) {
 	assert.Equal(t, `{"foo":{"bar":{"baz":"original value","qux":"dont change"}}}`, string(inputPartOne.AsBytes()))
 	assert.Equal(t, "orig1", inputPartOne.MetaGetStr("foo"))
 	assert.Equal(t, "orig2", inputPartOne.MetaGetStr("bar"))
-	assert.Equal(t, "", inputPartOne.MetaGetStr("baz"))
+	assert.Empty(t, inputPartOne.MetaGetStr("baz"))
 
 	assert.Equal(t, `{}`, string(inputPartTwo.AsBytes()))
-	assert.Equal(t, "", inputPartTwo.MetaGetStr("foo"))
-	assert.Equal(t, "", inputPartTwo.MetaGetStr("bar"))
-	assert.Equal(t, "", inputPartTwo.MetaGetStr("baz"))
+	assert.Empty(t, inputPartTwo.MetaGetStr("foo"))
+	assert.Empty(t, inputPartTwo.MetaGetStr("bar"))
+	assert.Empty(t, inputPartTwo.MetaGetStr("baz"))
 
 	assert.Equal(t, `{"foo":{"bar":{"baz":"and this changed","qux":"dont change"},"bar_new":"this is swapped now"}}`, string(resPartOne.AsBytes()))
 	assert.Equal(t, "orig1", resPartOne.MetaGetStr("foo"))
@@ -86,7 +88,7 @@ func TestBloblangContext(t *testing.T) {
 	part.MetaSetMut("bar", "orig2")
 
 	key, val := testFooKey, "bar"
-	msg = append(msg, message.WithContext(context.WithValue(context.Background(), key, val), part))
+	msg = append(msg, message.WithContext(context.WithValue(t.Context(), key, val), part))
 
 	conf := processor.NewConfig()
 	conf.Type = "bloblang"
@@ -96,7 +98,7 @@ func TestBloblangContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outMsgs, res := proc.ProcessBatch(context.Background(), msg)
+	outMsgs, res := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, res)
 	require.Len(t, outMsgs, 1)
 
@@ -131,7 +133,7 @@ func TestBloblangCustomObject(t *testing.T) {
 	proc, err := mock.NewManager().NewProcessor(conf)
 	require.NoError(t, err)
 
-	outMsgs, res := proc.ProcessBatch(context.Background(), msg)
+	outMsgs, res := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, res)
 	require.Len(t, outMsgs, 1)
 
@@ -160,7 +162,7 @@ func TestBloblangFiltering(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outMsgs, res := proc.ProcessBatch(context.Background(), msg)
+	outMsgs, res := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, res)
 	require.Len(t, outMsgs, 1)
 	require.Equal(t, 2, outMsgs[0].Len())
@@ -186,7 +188,7 @@ func TestBloblangFilterAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outMsgs, res := proc.ProcessBatch(context.Background(), msg)
+	outMsgs, res := proc.ProcessBatch(t.Context(), msg)
 	assert.Empty(t, outMsgs)
 	assert.NoError(t, res)
 }
@@ -206,7 +208,7 @@ func TestBloblangJSONError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	outMsgs, res := proc.ProcessBatch(context.Background(), msg)
+	outMsgs, res := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, res)
 	require.Len(t, outMsgs, 1)
 

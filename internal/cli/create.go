@@ -1,18 +1,19 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package cli
 
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/config"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/cli/common"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 )
 
 func addExpression(conf map[string]any, expression string) error {
@@ -108,27 +109,30 @@ func addExpression(conf map[string]any, expression string) error {
 	return nil
 }
 
-func createCliCommand() *cli.Command {
+func createCliCommand(cliOpts *common.CLIOpts) *cli.Command {
 	return &cli.Command{
-		Name:  "create",
-		Usage: "Create a new Benthos config",
-		Description: `
-Prints a new Benthos config to stdout containing specified components
-according to an expression. The expression must take the form of three
-comma-separated lists of inputs, processors and outputs, divided by
-forward slashes:
-
-  benthos create stdin/bloblang,awk/nats
-  benthos create file,http_server/protobuf/http_client
-
-If the expression is omitted a default config is created.`[1:],
-		Flags: []cli.Flag{
+		Name: "create",
+		Flags: append([]cli.Flag{
 			&cli.BoolFlag{
 				Name:    "small",
 				Aliases: []string{"s"},
 				Value:   false,
-				Usage:   "Print only the main components of a Benthos config (input, pipeline, output) and omit all fields marked as advanced.",
+				Usage:   cliOpts.ExecTemplate("Print only the main components of a {{.ProductName}} config (input, pipeline, output) and omit all fields marked as advanced."),
 			},
+		}, common.EnvFileAndTemplateFlags(cliOpts, false)...),
+		Usage: cliOpts.ExecTemplate("Create a new {{.ProductName}} config"),
+		Description: cliOpts.ExecTemplate(`
+Prints a new {{.ProductName}} config to stdout containing specified components
+according to an expression. The expression must take the form of three
+comma-separated lists of inputs, processors and outputs, divided by
+forward slashes:
+
+  {{.BinaryName}} create stdin/bloblang,awk/nats
+  {{.BinaryName}} create file,http_server/protobuf/http_client
+
+If the expression is omitted a default config is created.`)[1:],
+		Before: func(c *cli.Context) error {
+			return common.PreApplyEnvFilesAndTemplates(c, cliOpts)
 		},
 		Action: func(c *cli.Context) error {
 			conf := map[string]any{
@@ -144,12 +148,11 @@ If the expression is omitted a default config is created.`[1:],
 			}
 			if expression := c.Args().First(); expression != "" {
 				if err := addExpression(conf, expression); err != nil {
-					fmt.Fprintf(os.Stderr, "Generate error: %v\n", err)
-					os.Exit(1)
+					return fmt.Errorf("generate error: %w", err)
 				}
 			}
 
-			spec := config.Spec()
+			spec := cliOpts.MainConfigSpecCtor()
 			var filter docs.FieldFilter
 			if c.Bool("small") {
 				spec = stream.Spec()
@@ -162,13 +165,12 @@ If the expression is omitted a default config is created.`[1:],
 				FallbackToAny: true,
 			})
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Generate error: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("generate error: %w", err)
 			}
 
 			var node yaml.Node
 			if err = node.Encode(conf); err == nil {
-				sanitConf := docs.NewSanitiseConfig(bundle.GlobalEnvironment)
+				sanitConf := docs.NewSanitiseConfig(cliOpts.Environment)
 				sanitConf.RemoveTypeField = true
 				sanitConf.RemoveDeprecated = true
 				sanitConf.ForExample = true
@@ -179,12 +181,11 @@ If the expression is omitted a default config is created.`[1:],
 			if err == nil {
 				var configYAML []byte
 				if configYAML, err = docs.MarshalYAML(node); err == nil {
-					fmt.Println(string(configYAML))
+					fmt.Fprintln(cliOpts.Stdout, string(configYAML))
 				}
 			}
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Generate error: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("generate error: %w", err)
 			}
 			return nil
 		},

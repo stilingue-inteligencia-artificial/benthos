@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package cache
 
 import (
@@ -5,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 // Config is the all encompassing configuration struct for all cache types.
@@ -26,6 +28,7 @@ func NewConfig() Config {
 	}
 }
 
+// FromAny returns a component cache config from a parsed config, yaml node or map.
 func FromAny(prov docs.Provider, value any) (conf Config, err error) {
 	switch t := value.(type) {
 	case Config:

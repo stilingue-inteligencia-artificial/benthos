@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -7,9 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	ibloblang "github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	ibloblang "github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 func TestMessageCopyAirGap(t *testing.T) {
@@ -488,5 +490,81 @@ func BenchmarkMessageMappingOld(b *testing.B) {
 		assert.Equal(b, map[string]any{
 			"new_content": "HELLO WORLD",
 		}, resI)
+	}
+}
+
+func TestSyncResponse(t *testing.T) {
+	msgA := NewMessage([]byte("hello world a"))
+
+	msgB, storeB := msgA.WithSyncResponseStore()
+	msgB.SetBytes([]byte("hello world b"))
+
+	require.Error(t, msgA.AddSyncResponse())
+	require.NoError(t, msgB.AddSyncResponse())
+
+	msgC := msgB.Copy()
+	msgC.SetBytes([]byte("hello world c"))
+	require.NoError(t, msgC.AddSyncResponse())
+
+	resBatches := storeB.Read()
+	require.Len(t, resBatches, 2)
+	require.Len(t, resBatches[0], 1)
+	require.Len(t, resBatches[1], 1)
+
+	data, err := resBatches[0][0].AsBytes()
+	require.NoError(t, err)
+	assert.Equal(t, "hello world b", string(data))
+
+	data, err = resBatches[1][0].AsBytes()
+	require.NoError(t, err)
+	assert.Equal(t, "hello world c", string(data))
+}
+
+func TestSyncResponseBatched(t *testing.T) {
+	batchA := MessageBatch{
+		NewMessage([]byte("hello world a 1")),
+		NewMessage([]byte("hello world a 2")),
+		NewMessage([]byte("hello world a 3")),
+	}
+
+	batchB, storeB := batchA.WithSyncResponseStore()
+	batchB[0].SetBytes([]byte("hello world b 1"))
+	batchB[1].SetBytes([]byte("hello world b 2"))
+	batchB[2].SetBytes([]byte("hello world b 3"))
+
+	require.Error(t, batchA.AddSyncResponse())
+	require.NoError(t, batchB.AddSyncResponse())
+
+	batchC := batchB.Copy()
+	batchC[1].SetBytes([]byte("hello world c 2"))
+	require.NoError(t, batchC.AddSyncResponse())
+
+	batchD := batchA.Copy()
+	batchD[1].SetBytes([]byte("hello world d 2"))
+	require.Error(t, batchD.AddSyncResponse())
+
+	resBatches := storeB.Read()
+	require.Len(t, resBatches, 2)
+	require.Len(t, resBatches[0], 3)
+	require.Len(t, resBatches[1], 3)
+
+	for i, c := range []string{
+		"hello world b 1",
+		"hello world b 2",
+		"hello world b 3",
+	} {
+		data, err := resBatches[0][i].AsBytes()
+		require.NoError(t, err)
+		assert.Equal(t, c, string(data))
+	}
+
+	for i, c := range []string{
+		"hello world b 1",
+		"hello world c 2",
+		"hello world b 3",
+	} {
+		data, err := resBatches[1][i].AsBytes()
+		require.NoError(t, err)
+		assert.Equal(t, c, string(data))
 	}
 }

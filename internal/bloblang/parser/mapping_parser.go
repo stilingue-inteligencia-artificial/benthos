@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package parser
 
 import (
@@ -7,8 +9,8 @@ import (
 
 	"github.com/Jeffail/gabs/v2"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
 )
 
 // ParseMapping parses a bloblang mapping and returns an executor to run it, or

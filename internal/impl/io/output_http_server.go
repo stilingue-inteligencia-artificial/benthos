@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -17,17 +19,17 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/api"
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/httpserver"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/api"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/httpserver"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -106,11 +108,11 @@ func hsoSpec() *service.ConfigSpec {
 		Stable().
 		Categories("Network").
 		Summary(`Sets up an HTTP server that will send messages over HTTP(S) GET requests. HTTP 2.0 is supported when using TLS, which is enabled when key and cert files are specified.`).
-		Description(`Sets up an HTTP server that will send messages over HTTP(S) GET requests. If the `+"`address`"+` config field is left blank the [service-wide HTTP server](/docs/components/http/about) will be used.
+		Description(`Sets up an HTTP server that will send messages over HTTP(S) GET requests. If the `+"`address`"+` config field is left blank the xref:components:http/about.adoc[service-wide HTTP server] will be used.
 
 Three endpoints will be registered at the paths specified by the fields `+"`path`, `stream_path` and `ws_path`"+`. Which allow you to consume a single message batch, a continuous stream of line delimited messages, or a websocket of messages for each request respectively.
 
-When messages are batched the `+"`path`"+` endpoint encodes the batch according to [RFC1341](https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html). This behaviour can be overridden by [archiving your batches](/docs/configuration/batching#post-batch-processing).
+When messages are batched the `+"`path`"+` endpoint encodes the batch according to https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html[RFC1341^]. This behavior can be overridden by xref:configuration:batching.adoc#post-batch-processing[archiving your batches].
 
 Please note, messages are considered delivered as soon as the data is written to the client. There is no concept of at least once delivery on this output.
 
@@ -149,7 +151,7 @@ Please note, messages are considered delivered as soon as the data is written to
 }
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"http_server", hsoSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (out service.BatchOutput, pol service.BatchPolicy, mif int, err error) {
 			var hsoConf hsoConfig
@@ -170,9 +172,6 @@ func init() {
 			out = interop.NewUnwrapInternalOutput(outStrm)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -180,6 +179,7 @@ func init() {
 type httpServerOutput struct {
 	conf hsoConfig
 	log  log.Modular
+	mgr  bundle.NewManagement
 
 	mux    *mux.Router
 	server *http.Server
@@ -197,6 +197,7 @@ type httpServerOutput struct {
 	mStreamBatchSent metrics.StatCounter
 	mStreamError     metrics.StatCounter
 
+	startServerOnce sync.Once
 	closeServerOnce sync.Once
 	shutSig         *shutdown.Signaller
 }
@@ -223,6 +224,7 @@ func newHTTPServerOutput(conf hsoConfig, mgr bundle.NewManagement) (output.Strea
 		shutSig: shutdown.NewSignaller(),
 		conf:    conf,
 		log:     mgr.Logger(),
+		mgr:     mgr,
 		mux:     gMux,
 		server:  server,
 
@@ -443,39 +445,48 @@ func (h *httpServerOutput) Consume(ts <-chan message.Transaction) error {
 		return component.ErrAlreadyStarted
 	}
 	h.transactions = ts
-
-	if h.server != nil {
-		go func() {
-			if h.conf.KeyFile != "" || h.conf.CertFile != "" {
-				h.log.Info(
-					"Serving messages through HTTPS GET request at: https://%s\n",
-					h.conf.Address+h.conf.Path,
-				)
-				if err := h.server.ListenAndServeTLS(
-					h.conf.CertFile, h.conf.KeyFile,
-				); err != http.ErrServerClosed {
-					h.log.Error("Server error: %v\n", err)
-				}
-			} else {
-				h.log.Info(
-					"Serving messages through HTTP GET request at: http://%s\n",
-					h.conf.Address+h.conf.Path,
-				)
-				if err := h.server.ListenAndServe(); err != http.ErrServerClosed {
-					h.log.Error("Server error: %v\n", err)
-				}
-			}
-
-			h.shutSig.TriggerSoftStop()
-			h.shutSig.TriggerHasStopped()
-		}()
-	}
 	return nil
 }
 
-func (h *httpServerOutput) Connected() bool {
-	// Always return true as this is fuzzy right now.
-	return true
+func (h *httpServerOutput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestNotSupported(h.mgr).AsList()
+}
+
+func (h *httpServerOutput) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		component.ConnectionActive(h.mgr),
+	}
+}
+
+func (h *httpServerOutput) TriggerStartConsuming() {
+	h.startServerOnce.Do(func() {
+		if h.server != nil {
+			go func() {
+				if h.conf.KeyFile != "" || h.conf.CertFile != "" {
+					h.log.Info(
+						"Serving messages through HTTPS GET request at: https://%s\n",
+						h.conf.Address+h.conf.Path,
+					)
+					if err := h.server.ListenAndServeTLS(
+						h.conf.CertFile, h.conf.KeyFile,
+					); err != http.ErrServerClosed {
+						h.log.Error("Server error: %v\n", err)
+					}
+				} else {
+					h.log.Info(
+						"Serving messages through HTTP GET request at: http://%s\n",
+						h.conf.Address+h.conf.Path,
+					)
+					if err := h.server.ListenAndServe(); err != http.ErrServerClosed {
+						h.log.Error("Server error: %v\n", err)
+					}
+				}
+
+				h.shutSig.TriggerSoftStop()
+				h.shutSig.TriggerHasStopped()
+			}()
+		}
+	})
 }
 
 func (h *httpServerOutput) TriggerCloseNow() {

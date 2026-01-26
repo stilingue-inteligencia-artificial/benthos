@@ -1,7 +1,10 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package studio
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -10,9 +13,11 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
+
+	"github.com/redpanda-data/benthos/v4/internal/cli/common"
 )
 
-func pullCommand(version, dateBuilt string) *cli.Command {
+func pullCommand(cliOpts *common.CLIOpts) *cli.Command {
 	return &cli.Command{
 		Name:  "pull",
 		Usage: "Run deployments configured within a Benthos Studio session",
@@ -53,33 +58,36 @@ files and execute them, replacing the previous stream running.`[1:],
 				Value: false,
 				Usage: "Whether to send trace data back to Studio during execution. This is opt-in and is used as a way to add trace events to the graph editor for testing and debugging configs. This is a very useful feature but should be used with caution as it exports information about messages passing through the stream.",
 			},
+			&cli.StringFlag{
+				Name:  "api-path-prefix",
+				Value: "api",
+				Usage: "Specify the API path prefix of the Benthos studio server to connect to.",
+			},
 		},
 		Action: func(c *cli.Context) error {
 			// Start off by warning about all unsupported flags
-			if c.Bool("watcher") {
-				fmt.Fprintln(os.Stderr, "The --watcher/-w flag is not supported in this mode of operation")
-				os.Exit(1)
+			if cliOpts.RootFlags.GetWatcher(c) {
+				return errors.New("the --watcher/-w flag is not supported in this mode of operation")
 			}
 
 			token, secret := c.String("token"), c.String("token-secret")
 			if token == "" {
 				if token = os.Getenv("BSTDIO_NODE_TOKEN"); token == "" {
-					fmt.Fprintln(os.Stderr, "Must specify either --token or BSTDIO_NODE_TOKEN")
+					fmt.Fprintln(cliOpts.Stderr, "Must specify either --token or BSTDIO_NODE_TOKEN")
 				}
 			}
 			if secret == "" {
 				if secret = os.Getenv("BSTDIO_NODE_SECRET"); secret == "" {
-					fmt.Fprintln(os.Stderr, "Must specify either --token-secret or BSTDIO_NODE_SECRET")
+					fmt.Fprintln(cliOpts.Stderr, "Must specify either --token-secret or BSTDIO_NODE_SECRET")
 				}
 			}
 			if token == "" || secret == "" {
-				os.Exit(1)
+				return errors.New("must specify a node token and secret")
 			}
 
-			pullRunner, err := NewPullRunner(c, version, dateBuilt, token, secret)
+			pullRunner, err := NewPullRunner(c, cliOpts, token, secret)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error encountered whilst initiating studio sync: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("error encountered whilst initiating studio sync: %v", err)
 			}
 
 			sigCtx, done := context.WithCancel(context.Background())
@@ -122,10 +130,7 @@ files and execute them, replacing the previous stream running.`[1:],
 					sigNameMut.Lock()
 					pullRunner.logger.Info("Received signal %s, shutting down", sigName)
 					sigNameMut.Unlock()
-					if pullRunner.Stop(context.Background()) != nil {
-						os.Exit(1)
-					}
-					return nil
+					return pullRunner.Stop(context.Background())
 				}
 			}
 		},

@@ -1,11 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"context"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
 )
 
 // RateLimit is an interface implemented by Benthos rate limits.

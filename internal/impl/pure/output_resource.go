@@ -1,23 +1,26 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"resource", service.NewConfigSpec().
 			Stable().
 			Categories("Utility").
@@ -57,9 +60,9 @@ output_resources:
     gcp_pubsub:
       project: bar
       topic: baz
- `+"```"+`
+`+"```"+`
 
-You can find out more about resources [in this document.](/docs/configuration/resources)`).
+You can find out more about resources in xref:configuration:resources.adoc[]`).
 			Field(service.NewStringField("").Default("")),
 		func(conf *service.ParsedConfig, res *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			var resName string
@@ -80,9 +83,6 @@ You can find out more about resources [in this document.](/docs/configuration/re
 			})
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type resourceOutput struct {
@@ -92,7 +92,8 @@ type resourceOutput struct {
 
 	transactions <-chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func (r *resourceOutput) loop() {
@@ -141,18 +142,33 @@ func (r *resourceOutput) Consume(ts <-chan message.Transaction) error {
 		return component.ErrAlreadyStarted
 	}
 	r.transactions = ts
-	go r.loop()
 	return nil
 }
 
-func (r *resourceOutput) Connected() (isConnected bool) {
-	var err error
-	if err = r.mgr.AccessOutput(context.Background(), r.name, func(o output.Sync) {
-		isConnected = o.Connected()
+func (r *resourceOutput) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
+	if err := r.mgr.AccessOutput(context.Background(), r.name, func(o output.Sync) {
+		s = o.ConnectionTest(ctx)
 	}); err != nil {
-		r.log.Error("Failed to obtain output resource '%v': %v", r.name, err)
+		return component.ConnectionTestFailed(r.mgr, err).AsList()
 	}
 	return
+}
+
+func (r *resourceOutput) ConnectionStatus() (s component.ConnectionStatuses) {
+	if err := r.mgr.AccessOutput(context.Background(), r.name, func(o output.Sync) {
+		s = o.ConnectionStatus()
+	}); err != nil {
+		return component.ConnectionStatuses{
+			component.ConnectionFailing(r.mgr, err),
+		}
+	}
+	return
+}
+
+func (r *resourceOutput) TriggerStartConsuming() {
+	r.startOnce.Do(func() {
+		go r.loop()
+	})
 }
 
 func (r *resourceOutput) TriggerCloseNow() {

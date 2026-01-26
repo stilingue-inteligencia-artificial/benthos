@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracing_test
 
 import (
@@ -7,18 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/bundle/tracing"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/bundle/tracing"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestBundleInputTracing(t *testing.T) {
@@ -42,7 +44,9 @@ generate:
 	in, err := mgr.NewInput(inConfig)
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	in.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 	for i := 0; i < 10; i++ {
 		select {
@@ -93,7 +97,9 @@ generate:
 	in, err := mgr.NewInput(inConfig)
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	in.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 	for i := 0; i < 10; i++ {
 		select {
@@ -145,6 +151,8 @@ generate:
 	in, err = mgr.NewInput(inConfig)
 	require.NoError(t, err)
 
+	in.TriggerStartConsuming()
+
 	for i := 0; i < 5; i++ {
 		select {
 		case tran := <-in.TransactionChan():
@@ -191,7 +199,9 @@ generate:
 	in, err := mgr.NewInput(inConfig)
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	in.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 	for i := 0; i < 10; i++ {
 		select {
@@ -235,6 +245,8 @@ func TestBundleOutputTracing(t *testing.T) {
 	tranChan := make(chan message.Transaction)
 	require.NoError(t, out.Consume(tranChan))
 
+	out.TriggerStartConsuming()
+
 	for i := 0; i < 10; i++ {
 		resChan := make(chan error)
 		tran := message.NewTransaction(message.QuickBatch([][]byte{[]byte(strconv.Itoa(i))}), resChan)
@@ -250,7 +262,7 @@ func TestBundleOutputTracing(t *testing.T) {
 		}
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	out.TriggerCloseNow()
@@ -292,6 +304,8 @@ func TestBundleOutputTracingDisabled(t *testing.T) {
 	tranChan := make(chan message.Transaction)
 	require.NoError(t, out.Consume(tranChan))
 
+	out.TriggerStartConsuming()
+
 	for i := 0; i < 10; i++ {
 		resChan := make(chan error)
 		tran := message.NewTransaction(message.QuickBatch([][]byte{[]byte(strconv.Itoa(i))}), resChan)
@@ -307,7 +321,7 @@ func TestBundleOutputTracingDisabled(t *testing.T) {
 		}
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	out.TriggerCloseNow()
@@ -348,6 +362,8 @@ func TestBundleOutputWithProcessorsTracing(t *testing.T) {
 	tranChan := make(chan message.Transaction)
 	require.NoError(t, out.Consume(tranChan))
 
+	out.TriggerStartConsuming()
+
 	for i := 0; i < 10; i++ {
 		resChan := make(chan error)
 		tran := message.NewTransaction(message.QuickBatch([][]byte{[]byte("hello world " + strconv.Itoa(i))}), resChan)
@@ -365,7 +381,7 @@ func TestBundleOutputWithProcessorsTracing(t *testing.T) {
 
 	close(tranChan)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, out.WaitForClose(ctx))
@@ -430,6 +446,8 @@ broker:
 	tranChan := make(chan message.Transaction)
 	require.NoError(t, out.Consume(tranChan))
 
+	out.TriggerStartConsuming()
+
 	for i := 0; i < 5; i++ {
 		resChan := make(chan error)
 		tran := message.NewTransaction(message.QuickBatch([][]byte{
@@ -448,7 +466,7 @@ broker:
 		}
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	out.TriggerCloseNow()
@@ -494,7 +512,7 @@ broker:
 }
 
 func TestBundleProcessorTracing(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	tenv, summary := tracing.TracedBundle(bundle.GlobalEnvironment)
@@ -588,7 +606,7 @@ func TestBundleProcessorTracingError(t *testing.T) {
 }
 
 func TestBundleProcessorTracingDisabled(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	tenv, summary := tracing.TracedBundle(bundle.GlobalEnvironment)

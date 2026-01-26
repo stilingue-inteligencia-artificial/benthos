@@ -1,11 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package stream
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/pipeline"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/pipeline"
 )
 
 const (
@@ -26,10 +28,12 @@ type Config struct {
 	rawSource any
 }
 
+// GetRawSource returns the stream config raw source.
 func (c *Config) GetRawSource() any {
 	return c.rawSource
 }
 
+// FromParsed extracts the stream fields from the parsed config and returns a stream config.
 func FromParsed(prov docs.Provider, pConf *docs.ParsedConfig, rawSource any) (conf Config, err error) {
 	conf.rawSource = rawSource
 	var v any

@@ -1,9 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package mock
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // OutputWriter provides a mock implementation of types.OutputWriter.
@@ -14,9 +17,26 @@ func (o OutputWriter) WriteTransaction(ctx context.Context, t message.Transactio
 	return o(ctx, t)
 }
 
-// Connected always returns true.
-func (o OutputWriter) Connected() bool {
-	return true
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (o OutputWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestResults{
+		component.ConnectionTestNotSupported(component.NoopObservability()),
+	}
+}
+
+// ConnectionStatus returns the current status of the given component
+// connection. The result is a slice in order to accommodate higher order
+// components that wrap several others.
+func (o OutputWriter) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		component.ConnectionActive(component.NoopObservability()),
+	}
+}
+
+// TriggerStartConsuming does nothing.
+func (o OutputWriter) TriggerStartConsuming() {
 }
 
 // TriggerStopConsuming does nothing.
@@ -38,15 +58,32 @@ type OutputChanneled struct {
 	TChan <-chan message.Transaction
 }
 
-// Connected returns true.
-func (m *OutputChanneled) Connected() bool {
-	return true
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (o *OutputChanneled) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestResults{
+		component.ConnectionTestNotSupported(component.NoopObservability()),
+	}
+}
+
+// ConnectionStatus returns the current status of the given component
+// connection. The result is a slice in order to accommodate higher order
+// components that wrap several others.
+func (m *OutputChanneled) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		component.ConnectionActive(component.NoopObservability()),
+	}
 }
 
 // Consume sets the read channel. This implementation is NOT thread safe.
 func (m *OutputChanneled) Consume(msgs <-chan message.Transaction) error {
 	m.TChan = msgs
 	return nil
+}
+
+// TriggerStartConsuming does nothing.
+func (m *OutputChanneled) TriggerStartConsuming() {
 }
 
 // TriggerCloseNow does nothing.

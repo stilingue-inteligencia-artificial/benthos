@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -8,12 +10,12 @@ import (
 
 	"github.com/itchyny/gojq"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -28,27 +30,25 @@ func jqProcSpec() *service.ConfigSpec {
 		Stable().
 		Summary("Transforms and filters messages using jq queries.").
 		Description(`
-:::note Try out Bloblang
-For better performance and improved capabilities try out native Benthos mapping with the [`+"`mapping`"+` processor](/docs/components/processors/mapping).
-:::
+[TIP]
+.Try out Bloblang
+====
+For better performance and improved capabilities try out native Redpanda Connect mapping with the xref:components:processors/mapping.adoc[`+"`mapping`"+` processor].
+====
 
 The provided query is executed on each message, targeting either the contents as a structured JSON value or as a raw string using the field `+"`raw`"+`, and the message is replaced with the query result.
 
 Message metadata is also accessible within the query from the variable `+"`$metadata`"+`.
 
-This processor uses the [gojq library][gojq], and therefore does not require jq to be installed as a dependency. However, this also means there are some differences in how these queries are executed versus the jq cli which you can [read about here][gojq-difference].
+This processor uses the https://github.com/itchyny/gojq[gojq library^], and therefore does not require jq to be installed as a dependency. However, this also means there are some https://github.com/itchyny/gojq#difference-to-jq[differences in how these queries are executed^] versus the jq cli.
 
 If the query does not emit any value then the message is filtered, if the query returns multiple values then the resulting message will be an array containing all values.
 
-The full query syntax is described in [jq's documentation][jq-docs].
+The full query syntax is described in https://stedolan.github.io/jq/manual/[jq's documentation^].
 
-## Error Handling
+== Error handling
 
-Queries can fail, in which case the message remains unchanged, errors are logged, and the message is flagged as having failed, allowing you to use [standard processor error handling patterns](/docs/configuration/error_handling).`).
-		Footnotes(`
-[gojq]: https://github.com/itchyny/gojq
-[gojq-difference]: https://github.com/itchyny/gojq#difference-to-jq
-[jq-docs]: https://stedolan.github.io/jq/manual/`).
+Queries can fail, in which case the message remains unchanged, errors are logged, and the message is flagged as having failed, allowing you to use xref:configuration:error_handling.adoc[standard processor error handling patterns].`).
 		Example("Mapping", `
 When receiving JSON documents of the form:
 
@@ -92,7 +92,7 @@ pipeline:
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"jq", jqProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			query, err := conf.FieldString(jqpFieldQuery)
@@ -116,9 +116,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedProcessor("jq", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 var jqCompileOptions = []gojq.CompilerOption{

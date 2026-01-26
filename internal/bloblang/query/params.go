@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
@@ -9,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 // ParamDefinition describes a single parameter for a function or method.
@@ -109,9 +111,9 @@ func ParamAny(name, description string) ParamDefinition {
 	}
 }
 
-// NoDynamic disables any form of dynamic assignment for this parameter. This is
-// quite limiting (prevents variables from being used, etc) and so should only
-// be used with caution.
+// DisableDynamic disables any form of dynamic assignment for this parameter.
+// This is quite limiting (prevents variables from being used, etc) and so
+// should only be used with caution.
 func (d ParamDefinition) DisableDynamic() ParamDefinition {
 	d.NoDynamic = true
 	return d

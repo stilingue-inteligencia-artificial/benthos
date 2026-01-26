@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracing
 
 import (
@@ -9,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestInitSpansFromParentTextMap(t *testing.T) {

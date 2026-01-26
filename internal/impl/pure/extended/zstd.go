@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package extended
 
 import (
@@ -5,7 +7,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/benthosdev/benthos/v4/internal/impl/pure"
+	"github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 var _ = pure.AddKnownCompressionAlgorithm("zstd", pure.KnownCompressionAlgorithm{

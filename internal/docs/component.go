@@ -1,21 +1,6 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs
-
-import (
-	"bytes"
-
-	"gopkg.in/yaml.v3"
-)
-
-// Copied from ./internal/config/format.go.
-func marshalYAML(v any) ([]byte, error) {
-	var cbytes bytes.Buffer
-	enc := yaml.NewEncoder(&cbytes)
-	enc.SetIndent(2)
-	if err := enc.Encode(v); err != nil {
-		return nil, err
-	}
-	return cbytes.Bytes(), nil
-}
 
 // AnnotatedExample is an isolated example for a component.
 type AnnotatedExample struct {
@@ -82,19 +67,22 @@ type ComponentSpec struct {
 	// The status of the component.
 	Status Status `json:"status"`
 
+	// The support level of the component. This is an abstract concept.
+	SupportLevel string `json:"support_level,omitempty"`
+
 	// Plugin is true for all plugin components.
 	Plugin bool `json:"plugin"`
 
-	// Summary of the component (in markdown, must be short).
+	// Summary of the component (in Asciidoc, must be short).
 	Summary string `json:"summary,omitempty"`
 
-	// Description of the component (in markdown).
+	// Description of the component (in Asciidoc).
 	Description string `json:"description,omitempty"`
 
 	// Categories that describe the purpose of the component.
 	Categories []string `json:"categories"`
 
-	// Footnotes of the component (in markdown).
+	// Footnotes of the component (in Asciidoc).
 	Footnotes string `json:"footnotes,omitempty"`
 
 	// Examples demonstrating use cases for the component.

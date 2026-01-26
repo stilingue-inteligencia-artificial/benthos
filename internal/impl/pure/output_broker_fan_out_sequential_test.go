@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -10,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestBasicFanOutSequential(t *testing.T) {
@@ -33,9 +35,11 @@ func TestBasicFanOutSequential(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, oTM.Consume(readChan))
 
-	assert.True(t, oTM.Connected())
+	oTM.TriggerStartConsuming()
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	assert.True(t, oTM.ConnectionStatus().AllActive())
+
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	for i := 0; i < nMsgs; i++ {
@@ -66,7 +70,7 @@ func TestBasicFanOutSequential(t *testing.T) {
 		}
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	oTM.TriggerCloseNow()
@@ -74,7 +78,7 @@ func TestBasicFanOutSequential(t *testing.T) {
 }
 
 func TestFanOutSequentialBlock(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*10)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	mockOne := mock.OutputChanneled{}
@@ -87,6 +91,8 @@ func TestFanOutSequentialBlock(t *testing.T) {
 	oTM, err := newFanOutSequentialOutputBroker(outputs)
 	require.NoError(t, err)
 	require.NoError(t, oTM.Consume(readChan))
+
+	oTM.TriggerStartConsuming()
 
 	select {
 	case readChan <- message.NewTransaction(message.QuickBatch([][]byte{[]byte("hello world")}), resChan):
@@ -121,7 +127,7 @@ func TestFanOutSequentialBlock(t *testing.T) {
 
 	close(readChan)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 	require.NoError(t, oTM.WaitForClose(ctx))
 }

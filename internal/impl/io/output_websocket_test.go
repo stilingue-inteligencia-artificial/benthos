@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -11,12 +13,12 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestWebsocketOutputBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	expMsgs := []string{
@@ -62,6 +64,8 @@ websocket:
 	tChan := make(chan message.Transaction)
 	require.NoError(t, m.Consume(tChan))
 
+	m.TriggerStartConsuming()
+
 	for _, msg := range expMsgs {
 		require.NoError(t, writeBatchToChan(ctx, t, message.QuickBatch([][]byte{[]byte(msg)}), tChan))
 	}
@@ -71,7 +75,7 @@ websocket:
 }
 
 func TestWebsocketOutputClose(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +105,8 @@ websocket:
 
 	tChan := make(chan message.Transaction)
 	require.NoError(t, m.Consume(tChan))
+
+	m.TriggerStartConsuming()
 
 	m.TriggerCloseNow()
 	require.NoError(t, m.WaitForClose(ctx))

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -5,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func multilevelCacheConfig() *service.ConfigSpec {
@@ -46,7 +48,7 @@ cache_resources:
 }
 
 func init() {
-	err := service.RegisterCache(
+	service.MustRegisterCache(
 		"multilevel", multilevelCacheConfig(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.Cache, error) {
 			levels, err := conf.FieldStringList()
@@ -55,9 +57,6 @@ func init() {
 			}
 			return newMultilevelCache(levels, mgr, mgr.Logger())
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------

@@ -1,21 +1,27 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package stream
 
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"runtime/pprof"
 	"sync/atomic"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/pipeline"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/pipeline"
 )
 
 // Type creates and manages the lifetime of a Benthos stream.
@@ -44,30 +50,59 @@ func New(conf Config, mgr bundle.NewManagement, opts ...func(*Type)) (*Type, err
 	for _, opt := range opts {
 		opt(t)
 	}
-	if err := t.start(); err != nil {
+	if err := t.init(); err != nil {
 		return nil, err
 	}
 
 	healthCheck := func(w http.ResponseWriter, r *http.Request) {
-		inputConnected := t.inputLayer.Connected()
-		outputConnected := t.outputLayer.Connected()
+		type connStatus struct {
+			Label     string `json:"label"`
+			Path      string `json:"path"`
+			Connected bool   `json:"connected"`
+			Error     string `json:"error,omitempty"`
+		}
+
+		healthCheckRes := struct {
+			Error    string       `json:"error,omitempty"`
+			Statuses []connStatus `json:"statuses"`
+		}{}
+
+		inputStatuses := t.inputLayer.ConnectionStatus()
+		for _, v := range inputStatuses {
+			s := connStatus{
+				Label:     v.Label,
+				Path:      query.SliceToDotPath(v.Path...),
+				Connected: v.Connected,
+			}
+			if v.Err != nil {
+				s.Error = v.Err.Error()
+			}
+			healthCheckRes.Statuses = append(healthCheckRes.Statuses, s)
+		}
+
+		outputStatuses := t.outputLayer.ConnectionStatus()
+		for _, v := range outputStatuses {
+			s := connStatus{
+				Label:     v.Label,
+				Path:      query.SliceToDotPath(v.Path...),
+				Connected: v.Connected,
+			}
+			if v.Err != nil {
+				s.Error = v.Err.Error()
+			}
+			healthCheckRes.Statuses = append(healthCheckRes.Statuses, s)
+		}
 
 		if atomic.LoadUint32(&t.closed) == 1 {
-			http.Error(w, "Stream terminated", http.StatusNotFound)
-			return
+			w.WriteHeader(http.StatusServiceUnavailable)
+			healthCheckRes.Error = "stream terminated"
+		} else if !inputStatuses.AllActive() || !outputStatuses.AllActive() {
+			w.WriteHeader(http.StatusServiceUnavailable)
 		}
 
-		if inputConnected && outputConnected {
-			_, _ = w.Write([]byte("OK"))
-			return
-		}
-
-		w.WriteHeader(http.StatusServiceUnavailable)
-		if !inputConnected {
-			_, _ = w.Write([]byte("input not connected\n"))
-		}
-		if !outputConnected {
-			_, _ = w.Write([]byte("output not connected\n"))
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(healthCheckRes); err != nil {
+			mgr.Logger().With("error", err.Error()).Error("Failed to encode connection statuses for /ready")
 		}
 	}
 	t.manager.RegisterEndpoint(
@@ -92,10 +127,26 @@ func OptOnClose(onClose func()) func(*Type) {
 // IsReady returns a boolean indicating whether both the input and output layers
 // of the stream are connected.
 func (t *Type) IsReady() bool {
-	return t.inputLayer.Connected() && t.outputLayer.Connected()
+	return t.inputLayer.ConnectionStatus().AllActive() && t.outputLayer.ConnectionStatus().AllActive()
 }
 
-func (t *Type) start() (err error) {
+// ConnectionStatus returns the aggregate connection status of all inputs and
+// outputs of the stream.
+func (t *Type) ConnectionStatus() (s component.ConnectionStatuses) {
+	s = append(s, t.inputLayer.ConnectionStatus()...)
+	s = append(s, t.outputLayer.ConnectionStatus()...)
+	return
+}
+
+// ConnectionTest returns the aggregate connection test results of all inputs
+// and outputs of the stream.
+func (t *Type) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
+	s = append(s, t.inputLayer.ConnectionTest(ctx)...)
+	s = append(s, t.outputLayer.ConnectionTest(ctx)...)
+	return
+}
+
+func (t *Type) init() (err error) {
 	// Constructors
 	iMgr := t.manager.IntoPath("input")
 	if t.inputLayer, err = iMgr.NewInput(t.conf.Input); err != nil {
@@ -139,16 +190,23 @@ func (t *Type) start() (err error) {
 	}
 
 	go func(out output.Streamed) {
-		for {
-			if err := out.WaitForClose(context.Background()); err == nil {
-				t.onClose()
-				atomic.StoreUint32(&t.closed, 1)
-				return
-			}
+		// WaitForClose blocks until output is fully closed.
+		// Errors indicate close completed with issues, but output is still closed.
+		if err := out.WaitForClose(context.Background()); err != nil {
+			t.manager.Logger().Debug("Output close completed with error: %v", err)
 		}
+		t.onClose()
+		atomic.StoreUint32(&t.closed, 1)
 	}(t.outputLayer)
 
 	return nil
+}
+
+// TriggerStartConsuming prompts components to establish connections and start
+// consuming data.
+func (t *Type) TriggerStartConsuming() {
+	t.inputLayer.TriggerStartConsuming()
+	t.outputLayer.TriggerStartConsuming()
 }
 
 // StopGracefully attempts to close the stream in the most graceful way by only
@@ -158,7 +216,7 @@ func (t *Type) start() (err error) {
 func (t *Type) StopGracefully(ctx context.Context) (err error) {
 	t.inputLayer.TriggerStopConsuming()
 	if err = t.inputLayer.WaitForClose(ctx); err != nil {
-		return
+		return fmt.Errorf("waiting on input layer failed: %w", err)
 	}
 
 	// If we have a buffer then wait right here. We want to try and allow the
@@ -166,19 +224,19 @@ func (t *Type) StopGracefully(ctx context.Context) (err error) {
 	if t.bufferLayer != nil {
 		t.bufferLayer.TriggerStopConsuming()
 		if err = t.bufferLayer.WaitForClose(ctx); err != nil {
-			return
+			return fmt.Errorf("waiting on buffer layer failed: %w", err)
 		}
 	}
 
 	// After this point we can start closing the remaining components.
 	if t.pipelineLayer != nil {
 		if err = t.pipelineLayer.WaitForClose(ctx); err != nil {
-			return
+			return fmt.Errorf("waiting on pipeline layer failed: %w", err)
 		}
 	}
 
 	if err = t.outputLayer.WaitForClose(ctx); err != nil {
-		return
+		return fmt.Errorf("waiting on output layer failed: %w", err)
 	}
 	return nil
 }
@@ -249,7 +307,7 @@ func (t *Type) Stop(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	if !(errors.Is(err, context.Canceled) && errors.Is(err, context.DeadlineExceeded)) {
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 		t.manager.Logger().Error("Encountered error whilst attempting to shut down gracefully: %v\n", err)
 	}
 

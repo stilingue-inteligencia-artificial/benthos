@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/field"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // InterpolatedString resolves a string containing dynamic interpolation

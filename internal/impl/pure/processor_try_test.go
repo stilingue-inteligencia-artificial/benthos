@@ -1,18 +1,19 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestTryEmpty(t *testing.T) {
@@ -29,7 +30,7 @@ try: []
 	exp := [][]byte{
 		[]byte("foo bar baz"),
 	}
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(exp))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(exp))
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -64,7 +65,7 @@ try:
 		[]byte("MSAyIDMgNA=="),
 		[]byte("aGVsbG8gZm9vIHdvcmxk"),
 	}
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(parts))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(parts))
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -98,7 +99,7 @@ try:
 		[]byte("foo bar baz"),
 		[]byte("hello foo world"),
 	}
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(parts))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(parts))
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -133,7 +134,7 @@ try:
 		[]byte("Zm9vIGJhciBiYXo="),
 		[]byte("aGVsbG8gZm9vIHdvcmxk"),
 	}
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(parts))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(parts))
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -170,7 +171,7 @@ try:
 		[]byte("NOT VALID JSON"),
 		[]byte("eyJiYXIiOiJiYXoyIn0="),
 	}
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(parts))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(parts))
 	if res != nil {
 		t.Fatal(res)
 	}
@@ -209,7 +210,7 @@ try:
 		[]byte("1 2 3 4"),
 		[]byte("hello world"),
 	}
-	msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(parts))
+	msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(parts))
 	assert.NoError(t, res)
 	if len(msgs) != 0 {
 		t.Errorf("Wrong count of result msgs: %v", len(msgs))

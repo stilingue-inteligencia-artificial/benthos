@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package transaction
 
 import (
@@ -131,7 +133,7 @@ func benchmarkTransactionsFuncBased(b *testing.B, buffered int) {
 			if rFns[j] == nil {
 				return
 			}
-			require.NoError(b, rFns[j](context.Background(), nil))
+			require.NoError(b, rFns[j](b.Context(), nil))
 		}
 	}
 	for {

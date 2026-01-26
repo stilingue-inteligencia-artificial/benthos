@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,13 +8,13 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -26,17 +28,17 @@ func switchProcSpec() *service.ConfigSpec {
 		Categories("Composition").
 		Stable().
 		Summary(`Conditionally processes messages based on their contents.`).
-		Description(`For each switch case a [Bloblang query](/docs/guides/bloblang/about) is checked and, if the result is true (or the check is empty) the child processors are executed on the message.`).
+		Description(`For each switch case a xref:guides:bloblang/about.adoc[Bloblang query] is checked and, if the result is true (or the check is empty) the child processors are executed on the message.`).
 		Footnotes(`
-## Batching
+== Batching
 
-When a switch processor executes on a [batch of messages](/docs/configuration/batching) they are checked individually and can be matched independently against cases. During processing the messages matched against a case are processed as a batch, although the ordering of messages during case processing cannot be guaranteed to match the order as received.
+When a switch processor executes on a xref:configuration:batching.adoc[batch of messages] they are checked individually and can be matched independently against cases. During processing the messages matched against a case are processed as a batch, although the ordering of messages during case processing cannot be guaranteed to match the order as received.
 
-At the end of switch processing the resulting batch will follow the same ordering as the batch was received. If any child processors have split or otherwise grouped messages this grouping will be lost as the result of a switch is always a single batch. In order to perform conditional grouping and/or splitting use the [`+"`group_by`"+` processor](/docs/components/processors/group_by).`).
-		Example("I Hate George", `
-We have a system where we're counting a metric for all messages that pass through our system. However, occasionally we get messages from George where he's rambling about dumb stuff we don't care about.
+At the end of switch processing the resulting batch will follow the same ordering as the batch was received. If any child processors have split or otherwise grouped messages this grouping will be lost as the result of a switch is always a single batch. In order to perform conditional grouping and/or splitting use the xref:components:processors/group_by.adoc[`+"`group_by`"+` processor].`).
+		Example("Ignore George", `
+We have a system where we're counting a metric for all messages that pass through our system. However, occasionally we get messages from George that we don't care about.
 
-For Georges messages we want to instead emit a metric that gauges how angry he is about being ignored and then we drop it.`,
+For George's messages we want to instead emit a metric that gauges how angry he is about being ignored and then we drop it.`,
 			`
 pipeline:
   processors:
@@ -57,14 +59,14 @@ pipeline:
 		).
 		Field(service.NewObjectListField("",
 			service.NewBloblangField(spFieldCheck).
-				Description("A [Bloblang query](/docs/guides/bloblang/about) that should return a boolean value indicating whether a message should have the processors of this case executed on it. If left empty the case always passes. If the check mapping throws an error the message will be flagged [as having failed](/docs/configuration/error_handling) and will not be tested against any other cases.").
+				Description("A xref:guides:bloblang/about.adoc[Bloblang query] that should return a boolean value indicating whether a message should have the processors of this case executed on it. If left empty the case always passes. If the check mapping throws an error the message will be flagged xref:configuration:error_handling.adoc[as having failed] and will not be tested against any other cases.").
 				Examples(
 					`this.type == "foo"`,
 					`this.contents.urls.contains("https://benthos.dev/")`,
 				).
 				Default(""),
 			service.NewProcessorListField(spFieldProcessors).
-				Description("A list of [processors](/docs/components/processors/about/) to execute on a message.").
+				Description("A list of xref:components:processors/about.adoc[processors] to execute on a message.").
 				Default([]any{}),
 			service.NewBoolField(spFieldFallthrough).
 				Description("Indicates whether, if this case passes for a message, the next case should also be executed.").
@@ -74,7 +76,7 @@ pipeline:
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"switch", switchProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			caseConfs, err := conf.FieldObjectList()
@@ -93,9 +95,6 @@ func init() {
 
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedBatchedProcessor("switch", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 // switchCase contains a condition, processors and other fields for an

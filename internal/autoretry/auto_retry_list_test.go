@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package autoretry
 
 import (
@@ -14,7 +16,7 @@ import (
 var errCustomEOF = errors.New("custom EOF")
 
 func TestRetryListAllAcks(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	var acked []string
@@ -64,7 +66,7 @@ func TestRetryListAllAcks(t *testing.T) {
 }
 
 func TestRetryListNacks(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	var acked []string
@@ -147,7 +149,7 @@ func TestRetryListNacks(t *testing.T) {
 }
 
 func TestRetryListNackMutator(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	var acked []string

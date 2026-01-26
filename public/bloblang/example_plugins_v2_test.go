@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bloblang_test
 
 import (
@@ -6,7 +8,7 @@ import (
 	"math/rand"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 // This example demonstrates how to create Bloblang methods and functions and

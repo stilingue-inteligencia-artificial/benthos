@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package input
 
 import (
@@ -5,10 +7,10 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/benthosdev/benthos/v4/internal/autoretry"
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/autoretry"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // AsyncPreserver is a wrapper for input.Async implementations that keeps a
@@ -78,6 +80,13 @@ func NewAsyncPreserver(r Async) *AsyncPreserver {
 }
 
 //------------------------------------------------------------------------------
+
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (p *AsyncPreserver) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return p.r.ConnectionTest(ctx)
+}
 
 // Connect attempts to establish a connection to the source, if
 // unsuccessful returns an error. If the attempt is successful (or not

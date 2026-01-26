@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 // Package query provides a parser for the right-hand side query part of the
 // bloblang spec. This is useful as a separate package as it is used in
 // isolation within interpolation functions.
@@ -6,8 +8,8 @@ package query
 import (
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 type badFunctionErr string

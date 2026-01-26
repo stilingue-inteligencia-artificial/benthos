@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -5,12 +7,12 @@ import (
 	"io"
 	"os"
 
-	"github.com/benthosdev/benthos/v4/internal/codec"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/codec"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterOutput(
+	service.MustRegisterOutput(
 		"stdout", service.NewConfigSpec().
 			Stable().
 			Categories("Local").
@@ -23,9 +25,6 @@ func init() {
 			}
 			return w, 1, nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type stdoutWriter struct {

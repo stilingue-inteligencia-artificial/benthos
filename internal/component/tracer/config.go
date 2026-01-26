@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracer
 
 import (
@@ -7,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 func init() {
@@ -29,6 +31,7 @@ func NewConfig() Config {
 	}
 }
 
+// FromAny returns a tracer config from a parsed config, yaml node or map.
 func FromAny(prov docs.Provider, value any) (conf Config, err error) {
 	switch t := value.(type) {
 	case Config:

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package integration
 
 import (
@@ -12,17 +14,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
-	"github.com/gofrs/uuid"
+	"github.com/gofrs/uuid/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,15 +33,19 @@ import (
 // CheckSkip marks a test to be skipped unless the integration test has been
 // specifically requested using the -run flag.
 func CheckSkip(t testing.TB) {
-	if m := flag.Lookup("test.run").Value.String(); m == "" || regexp.MustCompile(strings.Split(m, "/")[0]).FindString(t.Name()) == "" {
-		t.Skip("Skipping as execution was not requested explicitly using go test -run ^Test.*Integration.*$")
+	runStr := flag.Lookup("test.run").Value.String()
+	if runStr == "" {
+		runStr = flag.Lookup("test.bench").Value.String()
+	}
+	if runStr == "" || regexp.MustCompile(strings.Split(runStr, "/")[0]).FindString(t.Name()) == "" {
+		t.Skip("Skipping as execution was not requested explicitly using go test -run '^Test.*Integration.*$'")
 	}
 }
 
 // CheckSkipExact skips a test unless the -run flag specifically targets it.
 func CheckSkipExact(t testing.TB) {
 	if m := flag.Lookup("test.run").Value.String(); m == "" || m != t.Name() {
-		t.Skipf("Skipping as execution was not requested explicitly using go test -run %v", t.Name())
+		t.Skipf("Skipping as execution was not requested explicitly using go test -run '%v'", t.Name())
 	}
 }
 
@@ -86,13 +93,36 @@ type streamTestEnvironment struct {
 	ctx     context.Context
 	log     log.Modular
 	stats   *metrics.Namespaced
-	mgr     bundle.NewManagement
+	mgr     *manager.Type
 
 	allowDuplicateMessages bool
+
+	// On manager init
+	onMgrInit func(m *manager.Type) error
 
 	// Ugly work arounds for slow connectors.
 	sleepAfterInput  time.Duration
 	sleepAfterOutput time.Duration
+}
+
+func (e *streamTestEnvironment) initMgr(t testing.TB, pConf *docs.ParsedConfig) {
+	t.Helper()
+
+	if e.mgr != nil {
+		return
+	}
+
+	mConf, err := manager.FromParsed(bundle.GlobalEnvironment, pConf)
+	require.NoError(t, err)
+
+	e.mgr, err = manager.New(mConf, manager.OptSetLogger(e.log), manager.OptSetMetrics(e.stats))
+	require.NoError(t, err)
+
+	require.NoError(t, e.mgr.TriggerStartConsuming(t.Context()))
+
+	if e.onMgrInit != nil {
+		require.NoError(t, e.onMgrInit(e.mgr))
+	}
 }
 
 func newStreamTestEnvironment(t testing.TB, confTemplate string) streamTestEnvironment {
@@ -113,7 +143,7 @@ func newStreamTestEnvironment(t testing.TB, confTemplate string) streamTestEnvir
 			},
 		},
 		timeout: time.Second * 90,
-		ctx:     context.Background(),
+		ctx:     t.Context(),
 		log:     log.Noop(),
 		stats:   metrics.Noop(),
 	}
@@ -158,6 +188,16 @@ func StreamTestOptAllowDupes() StreamTestOptFunc {
 func StreamTestOptMaxInFlight(n int) StreamTestOptFunc {
 	return func(env *streamTestEnvironment) {
 		env.configVars.General["MAX_IN_FLIGHT"] = strconv.Itoa(n)
+	}
+}
+
+// StreamTestOptOnResourcesInit sets a closure to be called once the common
+// resources are initialised for the test components.
+func StreamTestOptOnResourcesInit(fn func(res *service.Resources) error) StreamTestOptFunc {
+	return func(env *streamTestEnvironment) {
+		env.onMgrInit = func(m *manager.Type) error {
+			return fn(service.NewInternalResources(m))
+		}
 	}
 }
 
@@ -364,16 +404,12 @@ func initInput(t testing.TB, env *streamTestEnvironment) input.Streamed {
 	iConf, err := input.FromAny(bundle.GlobalEnvironment, pVal)
 	require.NoError(t, err)
 
-	mConf, err := manager.FromParsed(bundle.GlobalEnvironment, pConf)
-	require.NoError(t, err)
-
-	if env.mgr == nil {
-		env.mgr, err = manager.New(mConf, manager.OptSetLogger(env.log), manager.OptSetMetrics(env.stats))
-		require.NoError(t, err)
-	}
+	env.initMgr(t, pConf)
 
 	input, err := env.mgr.NewInput(iConf)
 	require.NoError(t, err)
+
+	input.TriggerStartConsuming()
 
 	if env.sleepAfterInput > 0 {
 		time.Sleep(env.sleepAfterInput)
@@ -406,18 +442,14 @@ func initOutput(t testing.TB, trans <-chan message.Transaction, env *streamTestE
 	oConf, err := output.FromAny(bundle.GlobalEnvironment, pVal)
 	require.NoError(t, err)
 
-	mConf, err := manager.FromParsed(bundle.GlobalEnvironment, pConf)
-	require.NoError(t, err)
-
-	if env.mgr == nil {
-		env.mgr, err = manager.New(mConf, manager.OptSetLogger(env.log), manager.OptSetMetrics(env.stats))
-		require.NoError(t, err)
-	}
+	env.initMgr(t, pConf)
 
 	output, err := env.mgr.NewOutput(oConf)
 	require.NoError(t, err)
 
 	require.NoError(t, output.Consume(trans))
+
+	output.TriggerStartConsuming()
 
 	if env.sleepAfterOutput > 0 {
 		time.Sleep(env.sleepAfterOutput)
@@ -511,7 +543,10 @@ func receiveMessage(
 	require.NoError(t, ackFn(ctx, err))
 	require.Len(t, b, 1)
 
-	return b.Get(0)
+	msg := b.Get(0)
+	require.NoError(t, msg.ErrorGet())
+
+	return msg
 }
 
 func receiveBatch(
@@ -571,18 +606,20 @@ func messagesInSet(t testing.TB, pop, allowDupes bool, b message.Batch, set map[
 	t.Helper()
 
 	for _, p := range b {
-		metadata, exists := set[string(p.AsBytes())]
+		contents := string(p.AsBytes())
+
+		metadata, exists := set[contents]
 		if allowDupes && !exists {
 			return
 		}
-		require.True(t, exists, "in set: %v, set: %v", string(p.AsBytes()), set)
+		require.True(t, exists, "in set: %v, set: %v", contents, set)
 
 		for i := 0; i < len(metadata); i += 2 {
 			assert.Equal(t, metadata[i+1], p.MetaGetStr(metadata[i]))
 		}
 
 		if pop {
-			delete(set, string(p.AsBytes()))
+			delete(set, contents)
 		}
 	}
 }

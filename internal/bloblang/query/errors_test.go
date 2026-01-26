@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
@@ -7,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 func TestTypeError(t *testing.T) {

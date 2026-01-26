@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package output
 
 import (
@@ -12,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type mockNBWriter struct {
@@ -24,6 +26,10 @@ type mockNBWriter struct {
 	closeCalled bool
 	closeChan   chan error
 	mut         sync.Mutex
+}
+
+func (m *mockNBWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return nil
 }
 
 func (m *mockNBWriter) Connect(context.Context) error {
@@ -74,6 +80,8 @@ func TestNotBatchedSingleMessages(t *testing.T) {
 	tChan := make(chan message.Transaction)
 	require.NoError(t, nbOut.Consume(tChan))
 
+	nbOut.TriggerStartConsuming()
+
 	for i := 0; i < 5; i++ {
 		select {
 		case tChan <- message.NewTransaction(msg(fmt.Sprintf("foo%v", i)), resChan):
@@ -88,7 +96,7 @@ func TestNotBatchedSingleMessages(t *testing.T) {
 		}
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nbOut.TriggerCloseNow()
@@ -115,6 +123,8 @@ func TestShutdown(t *testing.T) {
 	tChan := make(chan message.Transaction)
 	require.NoError(t, nbOut.Consume(tChan))
 
+	nbOut.TriggerStartConsuming()
+
 	select {
 	case tChan <- message.NewTransaction(msg("foo"), resChan):
 	case <-time.After(time.Second):
@@ -127,7 +137,7 @@ func TestShutdown(t *testing.T) {
 		t.Fatal("timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	done()
 
 	nbOut.TriggerCloseNow()
@@ -139,7 +149,7 @@ func TestShutdown(t *testing.T) {
 		t.Error("timed out")
 	}
 
-	ctx, done = context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done = context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	assert.NoError(t, nbOut.WaitForClose(ctx))
@@ -168,6 +178,8 @@ func TestNotBatchedBreakOutMessages(t *testing.T) {
 	tChan := make(chan message.Transaction)
 	require.NoError(t, nbOut.Consume(tChan))
 
+	nbOut.TriggerStartConsuming()
+
 	select {
 	case tChan <- message.NewTransaction(msg(
 		"foo0", "foo1", "foo2", "foo3", "foo4",
@@ -182,7 +194,7 @@ func TestNotBatchedBreakOutMessages(t *testing.T) {
 		t.Fatal("timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nbOut.TriggerCloseNow()
@@ -211,6 +223,8 @@ func TestNotBatchedBreakOutMessagesErrors(t *testing.T) {
 	tChan := make(chan message.Transaction)
 	require.NoError(t, nbOut.Consume(tChan))
 
+	nbOut.TriggerStartConsuming()
+
 	sourceMessage := msg("foo0", "foo1", "foo2", "foo3", "foo4")
 	sortGroup, sourceMessage := message.NewSortGroup(sourceMessage)
 
@@ -242,7 +256,7 @@ func TestNotBatchedBreakOutMessagesErrors(t *testing.T) {
 		t.Fatal("timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nbOut.TriggerCloseNow()
@@ -271,6 +285,8 @@ func TestNotBatchedBreakOutMessagesErrorsAsync(t *testing.T) {
 	tChan := make(chan message.Transaction)
 	require.NoError(t, nbOut.Consume(tChan))
 
+	nbOut.TriggerStartConsuming()
+
 	sourceMessage := msg("foo0", "foo1", "foo2", "foo3", "foo4")
 	sortGroup, sourceMessage := message.NewSortGroup(sourceMessage)
 
@@ -302,7 +318,7 @@ func TestNotBatchedBreakOutMessagesErrorsAsync(t *testing.T) {
 		t.Fatal("timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nbOut.TriggerCloseNow()

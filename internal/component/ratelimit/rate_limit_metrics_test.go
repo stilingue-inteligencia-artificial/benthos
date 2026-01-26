@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package ratelimit
 
 import (
@@ -7,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
 )
 
 type closableRateLimit struct {
@@ -27,7 +29,7 @@ func TestRateLimitAirGapShutdown(t *testing.T) {
 	rl := &closableRateLimit{}
 	agrl := MetricsForRateLimit(rl, metrics.Noop())
 
-	err := agrl.Close(context.Background())
+	err := agrl.Close(t.Context())
 	assert.NoError(t, err)
 	assert.True(t, rl.closed)
 }

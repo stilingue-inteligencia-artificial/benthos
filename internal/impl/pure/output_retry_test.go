@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -10,10 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestRetryConfigErrs(t *testing.T) {
@@ -51,7 +53,7 @@ func assertEqualMsg(t testing.TB, left, right message.Batch) {
 }
 
 func TestRetryBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	conf := parseYAMLOutputConf(t, `
@@ -79,6 +81,8 @@ retry:
 	if err = ret.Consume(tChan); err != nil {
 		t.Fatal(err)
 	}
+
+	ret.TriggerStartConsuming()
 
 	testMsg := message.QuickBatch(nil)
 	go func() {
@@ -113,7 +117,7 @@ retry:
 }
 
 func TestRetrySadPath(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	conf := parseYAMLOutputConf(t, `
@@ -144,6 +148,8 @@ retry:
 	if err = ret.Consume(tChan); err != nil {
 		t.Fatal(err)
 	}
+
+	ret.TriggerStartConsuming()
 
 	testMsg := message.QuickBatch(nil)
 	tran := message.NewTransaction(testMsg, resChan)
@@ -266,7 +272,7 @@ func ackForRetry(
 }
 
 func TestRetryParallel(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	conf := parseYAMLOutputConf(t, `
@@ -295,6 +301,8 @@ retry:
 	if err = ret.Consume(tChan); err != nil {
 		t.Fatal(err)
 	}
+
+	ret.TriggerStartConsuming()
 
 	resChan1, resChan2 := make(chan error), make(chan error)
 	sendForRetry("first", tChan, resChan1, t)
@@ -349,7 +357,9 @@ retry:
 	readChan := make(chan message.Transaction)
 	require.NoError(t, ret.Consume(readChan))
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*10)
+	ret.TriggerStartConsuming()
+
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	inMsg := message.NewPart(nil)

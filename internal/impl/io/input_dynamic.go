@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -7,12 +9,12 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/api"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/api"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -26,25 +28,25 @@ func dynInputSpec() *service.ConfigSpec {
 		Categories("Utility").
 		Summary(`A special broker type where the inputs are identified by unique labels and can be created, changed and removed during runtime via a REST HTTP interface.`).
 		Footnotes(`
-## Endpoints
+== Endpoints
 
-### GET `+"`/inputs`"+`
+=== GET `+"`/inputs`"+`
 
 Returns a JSON object detailing all dynamic inputs, providing information such as their current uptime and configuration.
 
-### GET `+"`/inputs/{id}`"+`
+=== GET `+"`/inputs/\\{id}`"+`
 
 Returns the configuration of an input.
 
-### POST `+"`/inputs/{id}`"+`
+=== POST `+"`/inputs/\\{id}`"+`
 
 Creates or updates an input with a configuration provided in the request body (in YAML or JSON format).
 
-### DELETE `+"`/inputs/{id}`"+`
+=== DELETE `+"`/inputs/\\{id}`"+`
 
 Stops and removes an input.
 
-### GET `+"`/inputs/{id}/uptime`"+`
+=== GET `+"`/inputs/\\{id}/uptime`"+`
 
 Returns the uptime of an input as a duration string (of the form "72h3m0.5s"), or "stopped" in the case where the input has gracefully terminated.`).
 		Fields(
@@ -58,7 +60,7 @@ Returns the uptime of an input as a duration string (of the form "72h3m0.5s"), o
 }
 
 func init() {
-	err := service.RegisterBatchInput("dynamic", dynInputSpec(),
+	service.MustRegisterBatchInput("dynamic", dynInputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 			i, err := newDynamicInputFromParsed(conf, mgr)
 			if err != nil {
@@ -66,9 +68,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalInput(i), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func dynInputAnyToYAMLConf(v any) []byte {
@@ -106,7 +105,9 @@ func newDynamicInputFromParsed(conf *service.ParsedConfig, res *service.Resource
 
 	inputs := map[string]input.Streamed{}
 	for k, v := range inputsMap {
-		inputs[k] = interop.UnwrapOwnedInput(v)
+		tmp := interop.UnwrapOwnedInput(v)
+		tmp.TriggerStartConsuming()
+		inputs[k] = tmp
 	}
 
 	var inputConfigsMut sync.Mutex
@@ -119,7 +120,8 @@ func newDynamicInputFromParsed(conf *service.ParsedConfig, res *service.Resource
 	dynAPI := api.NewDynamic()
 	mgr := interop.UnwrapManagement(res)
 	fanIn, err := newDynamicFanInInput(
-		inputs, mgr.Logger(),
+		mgr,
+		inputs,
 		func(ctx context.Context, l string) {
 			inputConfigsMut.Lock()
 			defer inputConfigsMut.Unlock()
@@ -160,6 +162,9 @@ func newDynamicInputFromParsed(conf *service.ParsedConfig, res *service.Resource
 		inputConfigsMut.Lock()
 		inputYAMLConfs[id] = dynInputAnyToYAMLConf(newConf)
 		inputConfigsMut.Unlock()
+
+		newInput.TriggerStartConsuming()
+
 		if err = fanIn.SetInput(ctx, id, newInput); err != nil {
 			mgr.Logger().Error("Failed to set input '%v': %v", id, err)
 			inputConfigsMut.Lock()

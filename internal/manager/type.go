@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
@@ -6,27 +8,36 @@ import (
 	"net/http"
 	"path"
 	"sync"
+	"sync/atomic"
 
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/component/scanner"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+)
+
+const (
+	tagInputResources     = "input_resources"
+	tagOutputResources    = "output_resources"
+	tagCacheResources     = "cache_resources"
+	tagProcessorResources = "processor_resources"
+	tagRateLimitResources = "rate_limit_resources"
 )
 
 // ErrResourceNotFound represents an error where a named resource could not be
@@ -61,6 +72,10 @@ type Type struct {
 	// stream should be prefixed with the stream name.
 	namespaceStreamEndpoints bool
 
+	// We allow this version string to be dynamic, as plugin authors might want
+	// their own custom versioning scheme.
+	engineVersion string
+
 	// Keeps track of the full configuration path of the component that holds
 	// the manager. This value is used only in observability and therefore it
 	// is acceptable that this does not fully represent reality.
@@ -78,6 +93,10 @@ type Type struct {
 	outputs    *liveResources[*outputWrapper]
 	rateLimits *liveResources[ratelimit.V1]
 
+	// Tracks whether the manager has been instructed to begin consuming, and if
+	// so any newly added components must also be triggered once initialized.
+	consumeTriggered *atomic.Bool
+
 	// Collections of component constructors
 	env      *bundle.Environment
 	bloblEnv *bloblang.Environment
@@ -88,6 +107,9 @@ type Type struct {
 
 	pipes    map[string]<-chan message.Transaction
 	pipeLock *sync.RWMutex
+
+	// Generic key/value store for plugin implementations.
+	genericValues *sync.Map
 }
 
 // OptFunc is an opt setting for a manager type.
@@ -106,6 +128,14 @@ func OptSetAPIReg(r APIReg) OptFunc {
 func OptSetStreamHTTPNamespacing(enabled bool) OptFunc {
 	return func(t *Type) {
 		t.namespaceStreamEndpoints = enabled
+	}
+}
+
+// OptSetEngineVersion sets the engine version reported to components. This
+// can be any scheme, or no scheme at all.
+func OptSetEngineVersion(v string) OptFunc {
+	return func(t *Type) {
+		t.engineVersion = v
 	}
 }
 
@@ -190,8 +220,12 @@ func New(conf ResourceConfig, opts ...OptFunc) (*Type, error) {
 
 		fs: ifs.OS(),
 
+		consumeTriggered: &atomic.Bool{},
+
 		pipes:    map[string]<-chan message.Transaction{},
 		pipeLock: &sync.RWMutex{},
+
+		genericValues: &sync.Map{},
 	}
 
 	for _, opt := range opts {
@@ -211,75 +245,86 @@ func New(conf ResourceConfig, opts ...OptFunc) (*Type, error) {
 		return nil
 	}
 
-	// Sometimes resources of a type might refer to other resources of the same
-	// type. When they are constructed they will check with the manager to
-	// ensure the resource they point to is valid, but not keep the reference.
-	// Since we cannot guarantee an order of initialisation we create
-	// placeholders during construction.
 	for _, c := range conf.ResourceInputs {
 		if err := checkLabel("input", c.Label); err != nil {
 			return nil, err
 		}
-		t.inputs.Add(c.Label, nil)
+		t.inputs.LazyAdd(c.Label, func(context.Context) (**InputWrapper, error) {
+			newInput, err := t.intoPath(tagInputResources).NewInput(c)
+			if err != nil {
+				return nil, err
+			}
+
+			ni := WrapInput(newInput, t)
+			return &ni, nil
+		})
 	}
 	for _, c := range conf.ResourceCaches {
 		if err := checkLabel("cache", c.Label); err != nil {
 			return nil, err
 		}
-		t.caches.Add(c.Label, nil)
+		t.caches.LazyAdd(c.Label, func(context.Context) (*cache.V1, error) {
+			tmp, err := t.intoPath(tagCacheResources).NewCache(c)
+			if err != nil {
+				return nil, err
+			}
+			return &tmp, nil
+		})
 	}
 	for _, c := range conf.ResourceProcessors {
 		if err := checkLabel("processor", c.Label); err != nil {
 			return nil, err
 		}
-		t.processors.Add(c.Label, nil)
+		t.processors.LazyAdd(c.Label, func(context.Context) (*processor.V1, error) {
+			newProc, err := t.intoPath(tagProcessorResources).NewProcessor(c)
+			if err != nil {
+				return nil, err
+			}
+			return &newProc, nil
+		})
 	}
 	for _, c := range conf.ResourceOutputs {
 		if err := checkLabel("output", c.Label); err != nil {
 			return nil, err
 		}
-		t.outputs.Add(c.Label, nil)
+		t.outputs.LazyAdd(c.Label, func(context.Context) (**outputWrapper, error) {
+			newOutput, err := t.intoPath(tagOutputResources).NewOutput(c)
+			if err != nil {
+				return nil, err
+			}
+
+			wrappedOutput, err := wrapOutput(newOutput)
+			if err != nil {
+				newOutput.TriggerCloseNow()
+				return nil, err
+			}
+
+			if t.consumeTriggered.Load() {
+				wrappedOutput.TriggerStartConsuming()
+			}
+			return &wrappedOutput, nil
+		})
 	}
 	for _, c := range conf.ResourceRateLimits {
 		if err := checkLabel("rate limit", c.Label); err != nil {
 			return nil, err
 		}
-		t.rateLimits.Add(c.Label, nil)
-	}
-
-	// Labels validated, begin construction
-	for _, conf := range conf.ResourceRateLimits {
-		if err := t.StoreRateLimit(context.Background(), conf.Label, conf); err != nil {
-			return nil, err
-		}
-	}
-
-	for _, conf := range conf.ResourceCaches {
-		if err := t.StoreCache(context.Background(), conf.Label, conf); err != nil {
-			return nil, err
-		}
-	}
-
-	// TODO: Prevent recursive processors.
-	for _, conf := range conf.ResourceProcessors {
-		if err := t.StoreProcessor(context.Background(), conf.Label, conf); err != nil {
-			return nil, err
-		}
-	}
-
-	for _, conf := range conf.ResourceInputs {
-		if err := t.StoreInput(context.Background(), conf.Label, conf); err != nil {
-			return nil, err
-		}
-	}
-
-	for _, conf := range conf.ResourceOutputs {
-		if err := t.StoreOutput(context.Background(), conf.Label, conf); err != nil {
-			return nil, err
-		}
+		t.rateLimits.LazyAdd(c.Label, func(context.Context) (*ratelimit.V1, error) {
+			newRL, err := t.intoPath(tagRateLimitResources).NewRateLimit(c)
+			if err != nil {
+				return nil, err
+			}
+			return &newRL, nil
+		})
 	}
 
 	return t, nil
+}
+
+// EngineVersion returns the stored version string for the engine. This version
+// string could be any format.
+func (t *Type) EngineVersion() string {
+	return t.engineVersion
 }
 
 //------------------------------------------------------------------------------
@@ -396,6 +441,23 @@ func (t *Type) UnsetPipe(name string, tran <-chan message.Transaction) {
 	t.pipeLock.Unlock()
 }
 
+// GetGeneric attempts to obtain and return a generic resource value by key.
+func (t *Type) GetGeneric(key any) (any, bool) {
+	return t.genericValues.Load(key)
+}
+
+// GetOrSetGeneric attempts to obtain an existing value for a given key if
+// present. Otherwise, it stores and returns the provided value. The loaded
+// result is true if the value was loaded, false if stored.
+func (t *Type) GetOrSetGeneric(key, value any) (actual any, loaded bool) {
+	return t.genericValues.LoadOrStore(key, value)
+}
+
+// SetGeneric attempts to set a generic resource to a given value by key.
+func (t *Type) SetGeneric(key, value any) {
+	t.genericValues.Store(key, value)
+}
+
 //------------------------------------------------------------------------------
 
 // WithMetricsMapping returns a manager with the stored metrics exporter wrapped
@@ -463,7 +525,7 @@ func (t *Type) ProbeCache(name string) bool {
 // resource will not be closed or removed. However, it is possible for the
 // resource to be accessed by any number of components in parallel.
 func (t *Type) AccessCache(ctx context.Context, name string, fn func(cache.V1)) (err error) {
-	if rerr := t.caches.RAccess(name, func(t cache.V1) {
+	if rerr := t.caches.RAccess(ctx, name, func(t cache.V1) {
 		if t == nil {
 			err = ErrResourceNotFound(name)
 			return
@@ -485,7 +547,7 @@ func (t *Type) NewCache(conf cache.Config) (cache.V1, error) {
 // initialized in order to avoid duplicate connections.
 func (t *Type) StoreCache(ctx context.Context, name string, conf cache.Config) error {
 	var initErr error
-	if err := t.caches.Access(name, true, func(c *cache.V1, set func(*cache.V1)) {
+	if err := t.caches.Access(ctx, name, true, func(c *cache.V1, set func(*cache.V1), _ error) {
 		if c != nil {
 			// If a previous resource exists with the same name then we do NOT allow
 			// it to be replaced unless it can be successfully closed. This ensures
@@ -496,7 +558,7 @@ func (t *Type) StoreCache(ctx context.Context, name string, conf cache.Config) e
 		}
 
 		var newCache cache.V1
-		if newCache, initErr = t.intoPath("cache_resources").NewCache(conf); initErr != nil {
+		if newCache, initErr = t.intoPath(tagCacheResources).NewCache(conf); initErr != nil {
 			return
 		}
 		set(&newCache)
@@ -509,7 +571,7 @@ func (t *Type) StoreCache(ctx context.Context, name string, conf cache.Config) e
 // RemoveCache attempts to close and remove an existing cache resource.
 func (t *Type) RemoveCache(ctx context.Context, name string) error {
 	var closeErr error
-	if err := t.caches.Access(name, false, func(c *cache.V1, set func(c *cache.V1)) {
+	if err := t.caches.Access(ctx, name, false, func(c *cache.V1, set func(c *cache.V1), _ error) {
 		if c == nil {
 			return
 		}
@@ -538,7 +600,7 @@ func (t *Type) ProbeInput(name string) bool {
 // resource will not be closed or removed. However, it is possible for the
 // resource to be accessed by any number of components in parallel.
 func (t *Type) AccessInput(ctx context.Context, name string, fn func(input.Streamed)) (err error) {
-	if rerr := t.inputs.RAccess(name, func(t *InputWrapper) {
+	if rerr := t.inputs.RAccess(ctx, name, func(t *InputWrapper) {
 		if t == nil {
 			err = ErrResourceNotFound(name)
 			return
@@ -560,7 +622,7 @@ func (t *Type) NewInput(conf input.Config) (input.Streamed, error) {
 // initialized in order to avoid duplicate connections.
 func (t *Type) StoreInput(ctx context.Context, name string, conf input.Config) error {
 	var initErr error
-	if err := t.inputs.Access(name, true, func(i **InputWrapper, set func(**InputWrapper)) {
+	if err := t.inputs.Access(ctx, name, true, func(i **InputWrapper, set func(**InputWrapper), _ error) {
 		if i != nil {
 			// If a previous resource exists with the same name then we do NOT allow
 			// it to be replaced unless it can be successfully closed. This ensures
@@ -576,15 +638,18 @@ func (t *Type) StoreInput(ctx context.Context, name string, conf input.Config) e
 		}
 
 		var newInput input.Streamed
-		if newInput, initErr = t.intoPath("input_resources").NewInput(conf); initErr != nil {
+		if newInput, initErr = t.intoPath(tagInputResources).NewInput(conf); initErr != nil {
 			return
 		}
 
 		if i != nil {
 			(*i).SwapInput(newInput)
 		} else {
-			ni := WrapInput(newInput)
+			ni := WrapInput(newInput, t)
 			set(&ni)
+			if t.consumeTriggered.Load() {
+				ni.TriggerStartConsuming()
+			}
 		}
 	}); err != nil {
 		return err
@@ -595,7 +660,7 @@ func (t *Type) StoreInput(ctx context.Context, name string, conf input.Config) e
 // RemoveInput attempts to close and remove an existing input resource.
 func (t *Type) RemoveInput(ctx context.Context, name string) error {
 	var closeErr error
-	if err := t.inputs.Access(name, false, func(i **InputWrapper, set func(i **InputWrapper)) {
+	if err := t.inputs.Access(ctx, name, false, func(i **InputWrapper, set func(i **InputWrapper), _ error) {
 		if i == nil {
 			return
 		}
@@ -626,7 +691,7 @@ func (t *Type) ProbeProcessor(name string) bool {
 // resource will not be closed or removed. However, it is possible for the
 // resource to be accessed by any number of components in parallel.
 func (t *Type) AccessProcessor(ctx context.Context, name string, fn func(processor.V1)) (err error) {
-	if rerr := t.processors.RAccess(name, func(t processor.V1) {
+	if rerr := t.processors.RAccess(ctx, name, func(t processor.V1) {
 		if t == nil {
 			err = ErrResourceNotFound(name)
 			return
@@ -648,7 +713,7 @@ func (t *Type) NewProcessor(conf processor.Config) (processor.V1, error) {
 // initialized in order to avoid duplicate connections.
 func (t *Type) StoreProcessor(ctx context.Context, name string, conf processor.Config) error {
 	var initErr error
-	if err := t.processors.Access(name, true, func(p *processor.V1, set func(*processor.V1)) {
+	if err := t.processors.Access(ctx, name, true, func(p *processor.V1, set func(*processor.V1), _ error) {
 		if p != nil {
 			// If a previous resource exists with the same name then we do NOT allow
 			// it to be replaced unless it can be successfully closed. This ensures
@@ -659,7 +724,7 @@ func (t *Type) StoreProcessor(ctx context.Context, name string, conf processor.C
 		}
 
 		var newProc processor.V1
-		if newProc, initErr = t.intoPath("processor_resources").NewProcessor(conf); initErr != nil {
+		if newProc, initErr = t.intoPath(tagProcessorResources).NewProcessor(conf); initErr != nil {
 			return
 		}
 		set(&newProc)
@@ -672,7 +737,7 @@ func (t *Type) StoreProcessor(ctx context.Context, name string, conf processor.C
 // RemoveProcessor attempts to close and remove an existing processor resource.
 func (t *Type) RemoveProcessor(ctx context.Context, name string) error {
 	var closeErr error
-	if err := t.processors.Access(name, false, func(p *processor.V1, set func(p *processor.V1)) {
+	if err := t.processors.Access(ctx, name, false, func(p *processor.V1, set func(p *processor.V1), _ error) {
 		if p == nil {
 			return
 		}
@@ -702,7 +767,7 @@ func (t *Type) ProbeOutput(name string) bool {
 // resource will not be closed or removed. However, it is possible for the
 // resource to be accessed by any number of components in parallel.
 func (t *Type) AccessOutput(ctx context.Context, name string, fn func(output.Sync)) (err error) {
-	if rerr := t.outputs.RAccess(name, func(t *outputWrapper) {
+	if rerr := t.outputs.RAccess(ctx, name, func(t *outputWrapper) {
 		if t == nil {
 			err = ErrResourceNotFound(name)
 			return
@@ -724,7 +789,7 @@ func (t *Type) NewOutput(conf output.Config, pipelines ...processor.PipelineCons
 // initialized in order to avoid duplicate connections.
 func (t *Type) StoreOutput(ctx context.Context, name string, conf output.Config) error {
 	var initErr error
-	if err := t.outputs.Access(name, true, func(o **outputWrapper, set func(**outputWrapper)) {
+	if err := t.outputs.Access(ctx, name, true, func(o **outputWrapper, set func(**outputWrapper), _ error) {
 		if o != nil {
 			// If a previous resource exists with the same name then we do NOT allow
 			// it to be replaced unless it can be successfully closed. This ensures
@@ -741,7 +806,7 @@ func (t *Type) StoreOutput(ctx context.Context, name string, conf output.Config)
 		}
 
 		var newOutput output.Streamed
-		if newOutput, initErr = t.intoPath("output_resources").NewOutput(conf); initErr != nil {
+		if newOutput, initErr = t.intoPath(tagOutputResources).NewOutput(conf); initErr != nil {
 			return
 		}
 
@@ -751,6 +816,9 @@ func (t *Type) StoreOutput(ctx context.Context, name string, conf output.Config)
 			return
 		}
 
+		if t.consumeTriggered.Load() {
+			wrappedOutput.TriggerStartConsuming()
+		}
 		set(&wrappedOutput)
 	}); err != nil {
 		return err
@@ -761,7 +829,7 @@ func (t *Type) StoreOutput(ctx context.Context, name string, conf output.Config)
 // RemoveOutput attempts to close and remove an existing output resource.
 func (t *Type) RemoveOutput(ctx context.Context, name string) error {
 	var closeErr error
-	if err := t.outputs.Access(name, false, func(o **outputWrapper, set func(o **outputWrapper)) {
+	if err := t.outputs.Access(ctx, name, false, func(o **outputWrapper, set func(o **outputWrapper), _ error) {
 		if o == nil {
 			return
 		}
@@ -794,7 +862,7 @@ func (t *Type) ProbeRateLimit(name string) bool {
 // resource will not be closed or removed. However, it is possible for the
 // resource to be accessed by any number of components in parallel.
 func (t *Type) AccessRateLimit(ctx context.Context, name string, fn func(ratelimit.V1)) (err error) {
-	if rerr := t.rateLimits.RAccess(name, func(t ratelimit.V1) {
+	if rerr := t.rateLimits.RAccess(ctx, name, func(t ratelimit.V1) {
 		if t == nil {
 			err = ErrResourceNotFound(name)
 			return
@@ -816,7 +884,7 @@ func (t *Type) NewRateLimit(conf ratelimit.Config) (ratelimit.V1, error) {
 // initialized in order to avoid duplicate connections.
 func (t *Type) StoreRateLimit(ctx context.Context, name string, conf ratelimit.Config) error {
 	var initErr error
-	if err := t.rateLimits.Access(name, true, func(r *ratelimit.V1, set func(*ratelimit.V1)) {
+	if err := t.rateLimits.Access(ctx, name, true, func(r *ratelimit.V1, set func(*ratelimit.V1), _ error) {
 		if r != nil {
 			// If a previous resource exists with the same name then we do NOT allow
 			// it to be replaced unless it can be successfully closed. This ensures
@@ -827,7 +895,7 @@ func (t *Type) StoreRateLimit(ctx context.Context, name string, conf ratelimit.C
 		}
 
 		var newRL ratelimit.V1
-		if newRL, initErr = t.intoPath("rate_limit_resources").NewRateLimit(conf); initErr != nil {
+		if newRL, initErr = t.intoPath(tagRateLimitResources).NewRateLimit(conf); initErr != nil {
 			return
 		}
 		set(&newRL)
@@ -840,7 +908,7 @@ func (t *Type) StoreRateLimit(ctx context.Context, name string, conf ratelimit.C
 // RemoveRateLimit attempts to close and remove an existing rate limit resource.
 func (t *Type) RemoveRateLimit(ctx context.Context, name string) error {
 	var closeErr error
-	if err := t.rateLimits.Access(name, false, func(r *ratelimit.V1, set func(r *ratelimit.V1)) {
+	if err := t.rateLimits.Access(ctx, name, false, func(r *ratelimit.V1, set func(r *ratelimit.V1), _ error) {
 		if r == nil {
 			return
 		}
@@ -883,14 +951,45 @@ func (t *Type) CloseObservability(ctx context.Context) error {
 	return nil
 }
 
+// TriggerStartConsuming instructs the manager to start resource inputs
+// consuming data. This call blocks if there are lazily evaluated inputs..
+func (t *Type) TriggerStartConsuming(ctx context.Context) error {
+	// Set this immediately so that all new components are triggered, as it is
+	// safe to call consume trigger multiple times.
+	t.consumeTriggered.Store(true)
+
+	if err := t.inputs.RWalk(ctx, func(name string, i *InputWrapper) error {
+		i.TriggerStartConsuming()
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	if err := t.outputs.RWalk(ctx, func(name string, o *outputWrapper) error {
+		o.TriggerStartConsuming()
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // TriggerStopConsuming instructs the manager to stop resource inputs and
 // outputs from consuming data. This call does not block.
 func (t *Type) TriggerStopConsuming() {
-	_ = t.inputs.RWalk(func(name string, i *InputWrapper) error {
+	// NOTE: Context is provided in R/O calls because we might have a lazily
+	// evaluated resource. In our case here we do not want to trigger a lazy
+	// initialization, and therefore we provide a pre-cancelled context.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_ = t.inputs.RWalk(ctx, func(name string, i *InputWrapper) error {
 		i.TriggerStopConsuming()
 		return nil
 	})
-	_ = t.outputs.RWalk(func(name string, o *outputWrapper) error {
+
+	_ = t.outputs.RWalk(ctx, func(name string, o *outputWrapper) error {
 		o.TriggerStopConsuming()
 		return nil
 	})
@@ -899,11 +998,18 @@ func (t *Type) TriggerStopConsuming() {
 // TriggerCloseNow triggers the absolute shut down of this component but should
 // not block the calling goroutine.
 func (t *Type) TriggerCloseNow() {
-	_ = t.inputs.RWalk(func(name string, i *InputWrapper) error {
+	// NOTE: Context is provided in R/O calls because we might have a lazily
+	// evaluated resource. In our case here we do not want to trigger a lazy
+	// initialization, and therefore we provide a pre-cancelled context.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_ = t.inputs.RWalk(ctx, func(name string, i *InputWrapper) error {
 		i.TriggerCloseNow()
 		return nil
 	})
-	_ = t.outputs.RWalk(func(name string, o *outputWrapper) error {
+
+	_ = t.outputs.RWalk(ctx, func(name string, o *outputWrapper) error {
 		o.TriggerCloseNow()
 		return nil
 	})
@@ -912,7 +1018,13 @@ func (t *Type) TriggerCloseNow() {
 // WaitForClose is a blocking call to wait until the component has finished
 // shutting down and cleaning up resources.
 func (t *Type) WaitForClose(ctx context.Context) error {
-	if err := t.inputs.Walk(func(name string, i **InputWrapper, set func(i **InputWrapper)) error {
+	// NOTE: Context is provided in calls because we might have a lazily
+	// evaluated resource. In our case here we do not want to trigger a lazy
+	// initialization, and therefore we provide a pre-cancelled context.
+	cctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := t.inputs.Walk(cctx, func(name string, i **InputWrapper, set func(i **InputWrapper)) error {
 		if i == nil {
 			return nil
 		}
@@ -925,7 +1037,7 @@ func (t *Type) WaitForClose(ctx context.Context) error {
 		return err
 	}
 
-	if err := t.caches.Walk(func(name string, c *cache.V1, set func(c *cache.V1)) error {
+	if err := t.caches.Walk(cctx, func(name string, c *cache.V1, set func(c *cache.V1)) error {
 		if c == nil {
 			return nil
 		}
@@ -938,7 +1050,7 @@ func (t *Type) WaitForClose(ctx context.Context) error {
 		return err
 	}
 
-	if err := t.processors.Walk(func(name string, p *processor.V1, set func(p *processor.V1)) error {
+	if err := t.processors.Walk(cctx, func(name string, p *processor.V1, set func(p *processor.V1)) error {
 		if p == nil {
 			return nil
 		}
@@ -951,7 +1063,7 @@ func (t *Type) WaitForClose(ctx context.Context) error {
 		return err
 	}
 
-	if err := t.rateLimits.Walk(func(name string, r *ratelimit.V1, set func(r *ratelimit.V1)) error {
+	if err := t.rateLimits.Walk(cctx, func(name string, r *ratelimit.V1, set func(r *ratelimit.V1)) error {
 		if r == nil {
 			return nil
 		}
@@ -964,7 +1076,7 @@ func (t *Type) WaitForClose(ctx context.Context) error {
 		return err
 	}
 
-	if err := t.outputs.Walk(func(name string, o **outputWrapper, set func(o **outputWrapper)) error {
+	if err := t.outputs.Walk(cctx, func(name string, o **outputWrapper, set func(o **outputWrapper)) error {
 		if o == nil {
 			return nil
 		}

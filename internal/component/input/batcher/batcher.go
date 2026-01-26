@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package batcher
 
 import (
@@ -7,11 +9,12 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/transaction"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/transaction"
 )
 
 // Impl wraps an input with a batch policy.
@@ -23,7 +26,8 @@ type Impl struct {
 
 	messagesOut chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 // New creates a new Batcher around an input.
@@ -35,7 +39,6 @@ func New(batcher *policy.Batcher, child input.Streamed, log log.Modular) input.S
 		messagesOut: make(chan message.Transaction),
 		shutSig:     shutdown.NewSignaller(),
 	}
-	go b.loop()
 	return &b
 }
 
@@ -151,9 +154,26 @@ func (m *Impl) loop() {
 	}
 }
 
-// Connected returns true if the underlying input is connected.
-func (m *Impl) Connected() bool {
-	return m.child.Connected()
+// TriggerStartConsuming kicks off the consumption of data.
+func (m *Impl) TriggerStartConsuming() {
+	m.startOnce.Do(func() {
+		go m.loop()
+		m.child.TriggerStartConsuming()
+	})
+}
+
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (m *Impl) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return m.child.ConnectionTest(ctx)
+}
+
+// ConnectionStatus returns the current status of the given component
+// connection. The result is a slice in order to accommodate higher order
+// components that wrap several others.
+func (m *Impl) ConnectionStatus() component.ConnectionStatuses {
+	return m.child.ConnectionStatus()
 }
 
 // TransactionChan returns the channel used for consuming messages from this

@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package parser
 
 import (
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
 )
 
 var arithmeticOpPattern = OneOf(

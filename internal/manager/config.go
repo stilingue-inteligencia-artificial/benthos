@@ -1,12 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 const (
@@ -49,6 +51,8 @@ func (r *ResourceConfig) AddFrom(extra *ResourceConfig) error {
 	return nil
 }
 
+// FromAny returns a resource config from a parsed config, yaml node or any
+// value.
 func FromAny(prov docs.Provider, v any) (conf ResourceConfig, err error) {
 	var pConf *docs.ParsedConfig
 	if pConf, err = Spec().ParsedConfigFromAny(v); err != nil {
@@ -57,6 +61,7 @@ func FromAny(prov docs.Provider, v any) (conf ResourceConfig, err error) {
 	return FromParsed(prov, pConf)
 }
 
+// FromParsed extracts a resource config from a parsed config.
 func FromParsed(prov docs.Provider, pConf *docs.ParsedConfig) (conf ResourceConfig, err error) {
 	conf = NewResourceConfig()
 

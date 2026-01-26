@@ -1,13 +1,15 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -16,13 +18,13 @@ const (
 )
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"split", service.NewConfigSpec().
 			Categories("Utility").
 			Stable().
 			Summary(`Breaks message batches (synonymous with multiple part messages) into smaller batches. The size of the resulting batches are determined either by a discrete size or, if the field `+"`byte_size`"+` is non-zero, then by total size in bytes (which ever limit is reached first).`).
 			Description(`
-This processor is for breaking batches down into smaller ones. In order to break a single message out into multiple messages use the `+"[`unarchive` processor](/docs/components/processors/unarchive)"+`.
+This processor is for breaking batches down into smaller ones. In order to break a single message out into multiple messages use the `+"xref:components:processors/unarchive.adoc[`unarchive` processor]"+`.
 
 If there is a remainder of messages after splitting a batch the remainder is also sent as a single batch. For example, if your target size was 10, and the processor received a batch of 95 message parts, the result would be 9 batches of 10 messages followed by a batch of 5 messages.`).
 			Fields(
@@ -46,9 +48,6 @@ If there is a remainder of messages after splitting a batch the remainder is als
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedBatchedProcessor("split", s, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type splitProc struct {

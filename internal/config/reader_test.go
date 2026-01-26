@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package config
 
 import (
@@ -10,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 )
 
 func newDummyReader(confFilePath string, resourcePaths []string, opts ...OptFunc) *Reader {
@@ -80,7 +82,7 @@ processor_resources:
 	}}
 	rdr := newDummyReader("foo_main.yaml", []string{"a.yaml", "b.yaml"}, OptUseFS(testFS))
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Empty(t, lints)
 
@@ -133,7 +135,7 @@ processor_resources:
 	}}
 	rdr := newDummyReader("foo_main.yaml", nil, OptUseFS(testFS))
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Empty(t, lints)
 

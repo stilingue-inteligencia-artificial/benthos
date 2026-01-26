@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,13 +8,13 @@ import (
 
 	"github.com/Jeffail/gabs/v2"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/value"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 func init() {
-	if err := bloblang.RegisterMethodV2("squash",
+	bloblang.MustRegisterMethodV2("squash",
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryObjectAndArray).
 			Description("Squashes an array of objects into a single object, where key collisions result in the values being merged (following similar rules as the `.merge()` method)").
@@ -32,15 +34,13 @@ func init() {
 				}
 				return root.Data(), nil
 			}), nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 
-	if err := bloblang.RegisterMethodV2("with",
+	bloblang.MustRegisterMethodV2("with",
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryObjectAndArray).
 			Variadic().
-			Description(`Returns an object where all but one or more [field path][field_paths] arguments are removed. Each path specifies a specific field to be retained from the input object, allowing for nested fields.
+			Description(`Returns an object where all but one or more xref:configuration:field_paths.adoc[field path] arguments are removed. Each path specifies a specific field to be retained from the input object, allowing for nested fields.
 
 If a key within a nested path does not exist then it is ignored.`).
 			Example("", `root = this.with("inner.a","inner.c","d")`,
@@ -61,11 +61,9 @@ If a key within a nested path does not exist then it is ignored.`).
 			return bloblang.ObjectMethod(func(i map[string]any) (any, error) {
 				return mapWith(i, includeList), nil
 			}), nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 
-	if err := bloblang.RegisterMethodV2("concat",
+	bloblang.MustRegisterMethodV2("concat",
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryObjectAndArray).
 			Variadic().
@@ -96,11 +94,9 @@ If a key within a nested path does not exist then it is ignored.`).
 				}
 				return resSlice, nil
 			}), nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 
-	if err := bloblang.RegisterMethodV2("zip",
+	bloblang.MustRegisterMethodV2("zip",
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryObjectAndArray).
 			Variadic().
@@ -145,9 +141,7 @@ If a key within a nested path does not exist then it is ignored.`).
 				}
 				return resSlice, nil
 			}), nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 }
 
 func mapWith(m map[string]any, paths [][]string) map[string]any {

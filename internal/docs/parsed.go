@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs
 
 import (
@@ -8,9 +10,11 @@ import (
 	"github.com/Jeffail/gabs/v2"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
+// ParsedConfigFromAny returns a plugin component configuration config from a
+// parsed config, yaml node or any value.
 func (f FieldSpec) ParsedConfigFromAny(v any) (pConf *ParsedConfig, err error) {
 	pConf = &ParsedConfig{}
 	switch t := v.(type) {
@@ -23,6 +27,8 @@ func (f FieldSpec) ParsedConfigFromAny(v any) (pConf *ParsedConfig, err error) {
 	return
 }
 
+// ParsedConfigFromAny returns a plugin component configuration config from a
+// parsed config, yaml node or any value.
 func (f FieldSpecs) ParsedConfigFromAny(v any) (pConf *ParsedConfig, err error) {
 	pConf = &ParsedConfig{}
 	switch t := v.(type) {
@@ -44,10 +50,12 @@ type ParsedConfig struct {
 	line       *int
 }
 
+// Raw returns the raw config.
 func (p *ParsedConfig) Raw() any {
 	return p.generic
 }
 
+// Line returns the config line.
 func (p *ParsedConfig) Line() (int, bool) {
 	if p.line == nil {
 		return 0, false
@@ -75,6 +83,7 @@ func (p *ParsedConfig) Field(path ...string) (any, bool) {
 	return gObj.S(path...).Data(), true
 }
 
+// FullDotPath returns the canonical path of a config.
 func (p *ParsedConfig) FullDotPath(path ...string) string {
 	var fullPath []string
 	fullPath = append(fullPath, p.hiddenPath...)

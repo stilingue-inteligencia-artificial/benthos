@@ -1,10 +1,15 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package httpclient
 
 import (
+	"context"
 	"crypto/tls"
+	"io/fs"
+	"net/http"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -18,12 +23,14 @@ const (
 	hcFieldRetryPeriod         = "retry_period"
 	hcFieldMaxRetryBackoff     = "max_retry_backoff"
 	hcFieldRetries             = "retries"
+	hcFieldFollowRedirects     = "follow_redirects"
 	hcFieldBackoffOn           = "backoff_on"
 	hcFieldDropOn              = "drop_on"
 	hcFieldSuccessfulOn        = "successful_on"
 	hcFieldDumpRequestLogLevel = "dump_request_log_level"
 	hcFieldTLS                 = "tls"
 	hcFieldProxyURL            = "proxy_url"
+	hcFieldDisableHTTP2        = "disable_http2"
 )
 
 // ConfigField returns a public API config field spec for an HTTP component,
@@ -65,7 +72,7 @@ func ConfigField(defaultVerb string, forOutput bool, extraChildren ...*service.C
 			Description(extractHeadersDesc).
 			Advanced(),
 		service.NewStringField(hcFieldRateLimit).
-			Description("An optional [rate limit](/docs/components/rate_limits/about) to throttle requests by.").
+			Description("An optional xref:components:rate_limits/about.adoc[rate limit] to throttle requests by.").
 			Optional(),
 		service.NewDurationField(hcFieldTimeout).
 			Description("A static timeout to apply to requests.").
@@ -82,6 +89,10 @@ func ConfigField(defaultVerb string, forOutput bool, extraChildren ...*service.C
 			Description("The maximum number of retry attempts to make.").
 			Advanced().
 			Default(3),
+		service.NewBoolField(hcFieldFollowRedirects).
+			Description("Whether or not to transparently follow redirects, i.e. responses with 300-399 status codes. If disabled, the response message will contain the body, status, and headers from the redirect response and the processor will not make a request to the URL set in the Location header of the response.").
+			Advanced().
+			Default(true),
 		service.NewIntListField(hcFieldBackoffOn).
 			Description("A list of status codes whereby the request should be considered to have failed and retries should be attempted, but the period between them should be increased gradually.").
 			Advanced().
@@ -98,6 +109,11 @@ func ConfigField(defaultVerb string, forOutput bool, extraChildren ...*service.C
 			Description("An optional HTTP proxy URL.").
 			Advanced().
 			Optional(),
+		service.NewBoolField(hcFieldDisableHTTP2).
+			Description("Whether or not to disable disable HTTP/2").
+			Advanced().
+			Default(false).
+			Version("4.44.0"),
 	)
 
 	innerFields = append(innerFields, extraChildren...)
@@ -137,6 +153,9 @@ func ConfigFromParsed(pConf *service.ParsedConfig) (conf OldConfig, err error) {
 	if conf.NumRetries, err = pConf.FieldInt(hcFieldRetries); err != nil {
 		return
 	}
+	if conf.FollowRedirects, err = pConf.FieldBool(hcFieldFollowRedirects); err != nil {
+		return
+	}
 	if conf.BackoffOn, err = pConf.FieldIntList(hcFieldBackoffOn); err != nil {
 		return
 	}
@@ -151,10 +170,13 @@ func ConfigFromParsed(pConf *service.ParsedConfig) (conf OldConfig, err error) {
 		return
 	}
 	conf.ProxyURL, _ = pConf.FieldString(hcFieldProxyURL)
-	if conf.Auth, err = authConfFromParsed(pConf); err != nil {
+	if conf.authSigner, err = pConf.HTTPRequestAuthSignerFromParsed(); err != nil {
 		return
 	}
-	if conf.OAuth2, err = oauth2FromParsed(pConf); err != nil {
+	if conf.DisableHTTP2, err = pConf.FieldBool(hcFieldDisableHTTP2); err != nil {
+		return
+	}
+	if conf.clientCtor, err = oauth2ClientCtorFromParsed(pConf); err != nil {
 		return
 	}
 	return
@@ -172,6 +194,7 @@ type OldConfig struct {
 	Retry               time.Duration
 	MaxBackoff          time.Duration
 	NumRetries          int
+	FollowRedirects     bool
 	BackoffOn           []int
 	DropOn              []int
 	SuccessfulOn        []int
@@ -179,6 +202,7 @@ type OldConfig struct {
 	TLSEnabled          bool
 	TLSConf             *tls.Config
 	ProxyURL            string
-	Auth                AuthConfig
-	OAuth2              OAuth2Config
+	DisableHTTP2        bool
+	authSigner          func(f fs.FS, req *http.Request) error
+	clientCtor          func(context.Context, *http.Client) *http.Client
 }

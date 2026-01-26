@@ -1,16 +1,17 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestSelectParts(t *testing.T) {
@@ -71,7 +72,7 @@ select_parts:
 	}
 
 	for _, test := range tests {
-		msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(test.in))
+		msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(test.in))
 		if len(msgs) != 1 {
 			t.Errorf("Select Parts failed on: %s", test.in)
 		} else if res != nil {
@@ -117,7 +118,7 @@ select_parts:
 			t.Fatal(err)
 		}
 
-		msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(input))
+		msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(input))
 		if len(msgs) != 1 {
 			t.Errorf("Select Parts failed on index: %v", i)
 		} else if res != nil {
@@ -142,7 +143,7 @@ select_parts:
 		return
 	}
 
-	msgs, _ := proc.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("foo")}))
+	msgs, _ := proc.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("foo")}))
 	if len(msgs) != 0 {
 		t.Error("Expected failure with zero parts selected")
 	}

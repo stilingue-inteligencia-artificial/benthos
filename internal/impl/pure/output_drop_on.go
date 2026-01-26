@@ -1,19 +1,22 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"fmt"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -28,7 +31,7 @@ func dropOnOutputSpec() *service.ConfigSpec {
 		Stable().
 		Categories("Utility").
 		Summary(`Attempts to write messages to a child output and if the write fails for one of a list of configurable reasons the message is dropped (acked) instead of being reattempted (or nacked).`).
-		Description(`Regular Benthos outputs will apply back pressure when downstream services aren't accessible, and Benthos retries (or nacks) all messages that fail to be delivered. However, in some circumstances, or for certain output types, we instead might want to relax these mechanisms, which is when this output becomes useful.`).
+		Description(`Regular Redpanda Connect outputs will apply back pressure when downstream services aren't accessible, and Redpanda Connect retries (or nacks) all messages that fail to be delivered. However, in some circumstances, or for certain output types, we instead might want to relax these mechanisms, which is when this output becomes useful.`).
 		Example(
 			"Dropping failed HTTP requests",
 			"In this example we have a fan_out broker, where we guarantee delivery to our Kafka output, but drop messages if they fail our secondary HTTP client output.",
@@ -83,7 +86,7 @@ output:
 }
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"drop_on", dropOnOutputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			maxInFlight = 1
@@ -94,9 +97,6 @@ func init() {
 			out = interop.NewUnwrapInternalOutput(s)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -112,7 +112,8 @@ type dropOnWriter struct {
 	transactionsIn  <-chan message.Transaction
 	transactionsOut chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newDropOnWriter(conf *service.ParsedConfig, log log.Modular) (*dropOnWriter, error) {
@@ -281,12 +282,22 @@ func (d *dropOnWriter) Consume(ts <-chan message.Transaction) error {
 		return err
 	}
 	d.transactionsIn = ts
-	go d.loop()
 	return nil
 }
 
-func (d *dropOnWriter) Connected() bool {
-	return d.wrapped.Connected()
+func (d *dropOnWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return d.wrapped.ConnectionTest(ctx)
+}
+
+func (d *dropOnWriter) ConnectionStatus() component.ConnectionStatuses {
+	return d.wrapped.ConnectionStatus()
+}
+
+func (d *dropOnWriter) TriggerStartConsuming() {
+	d.startOnce.Do(func() {
+		d.wrapped.TriggerStartConsuming()
+		go d.loop()
+	})
 }
 
 func (d *dropOnWriter) TriggerCloseNow() {

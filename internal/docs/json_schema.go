@@ -1,8 +1,29 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs
+
+func jSchemaIsRequired(f *FieldSpec) bool {
+	if f.IsOptional || f.Default != nil {
+		return false
+	}
+	if len(f.Children) == 0 {
+		return true
+	}
+	for _, f := range f.Children {
+		if jSchemaIsRequired(&f) {
+			return true
+		}
+	}
+	return false
+}
 
 // JSONSchema serializes a field spec into a JSON schema structure.
 func (f FieldSpec) JSONSchema() any {
 	spec := map[string]any{}
+	spec["is_advanced"] = f.IsAdvanced
+	spec["is_deprecated"] = f.IsDeprecated
+	spec["is_optional"] = f.IsOptional
+	spec["is_secret"] = f.IsSecret
 	switch f.Kind {
 	case Kind2DArray:
 		innerField := f
@@ -36,7 +57,7 @@ func (f FieldSpec) JSONSchema() any {
 			spec["properties"] = f.Children.JSONSchema()
 			var required []string
 			for _, child := range f.Children {
-				if !child.IsOptional && child.Default == nil {
+				if jSchemaIsRequired(&child) {
 					required = append(required, child.Name)
 				}
 			}
@@ -45,21 +66,23 @@ func (f FieldSpec) JSONSchema() any {
 			}
 			spec["additionalProperties"] = false
 		case FieldTypeInput:
-			spec["$ref"] = "#/$defs/input"
+			spec["$ref"] = "#/definitions/input"
 		case FieldTypeBuffer:
-			spec["$ref"] = "#/$defs/buffer"
+			spec["$ref"] = "#/definitions/buffer"
 		case FieldTypeCache:
-			spec["$ref"] = "#/$defs/cache"
+			spec["$ref"] = "#/definitions/cache"
 		case FieldTypeProcessor:
-			spec["$ref"] = "#/$defs/processor"
+			spec["$ref"] = "#/definitions/processor"
 		case FieldTypeRateLimit:
-			spec["$ref"] = "#/$defs/rate_limit"
+			spec["$ref"] = "#/definitions/rate_limit"
 		case FieldTypeOutput:
-			spec["$ref"] = "#/$defs/output"
+			spec["$ref"] = "#/definitions/output"
 		case FieldTypeMetrics:
-			spec["$ref"] = "#/$defs/metrics"
+			spec["$ref"] = "#/definitions/metrics"
 		case FieldTypeTracer:
-			spec["$ref"] = "#/$defs/tracer"
+			spec["$ref"] = "#/definitions/tracer"
+		case FieldTypeScanner:
+			spec["$ref"] = "#/definitions/scanner"
 		}
 	}
 	return spec

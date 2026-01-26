@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
@@ -9,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestLRUCacheStandard(t *testing.T) {
@@ -52,7 +53,7 @@ init_values:
 	c, err := lruMemCacheFromConfig(defConf)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	exp := "bar"
 	if act, err := c.Get(ctx, "foo"); err != nil {
@@ -99,7 +100,7 @@ func BenchmarkLRU(b *testing.B) {
 	c, err := lruMemCacheFromConfig(defConf)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 
@@ -122,7 +123,7 @@ func BenchmarkLRUParallel(b *testing.B) {
 	c, err := lruMemCacheFromConfig(defConf)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 
@@ -143,7 +144,7 @@ func BenchmarkLRUParallel(b *testing.B) {
 func testServiceCache(t *testing.T, c service.Cache) {
 	t.Helper()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	key := "foo"
 
 	expErr := service.ErrKeyNotFound

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -7,11 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/codec/interop"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/internal/httpclient"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/httpclient"
+	"github.com/redpanda-data/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service/codec"
 )
 
 func httpClientInputSpec() *service.ConfigSpec {
@@ -19,7 +20,7 @@ func httpClientInputSpec() *service.ConfigSpec {
 		service.NewBoolField("enabled").Description("Enables streaming mode.").Default(false),
 		service.NewBoolField("reconnect").Description("Sets whether to re-establish the connection once it is lost.").Default(true),
 	}
-	streamFields = append(streamFields, interop.OldReaderCodecFields("lines")...)
+	streamFields = append(streamFields, codec.DeprecatedCodecFields("lines")...)
 
 	streamField := service.NewObjectField("stream", streamFields...).
 		Description("Allows you to set streaming mode, where requests are kept open and messages are processed line-by-line.").
@@ -30,15 +31,15 @@ func httpClientInputSpec() *service.ConfigSpec {
 		Categories("Network").
 		Summary("Connects to a server and continuously performs requests for a single message.").
 		Description(`
-The URL and header values of this type can be dynamically set using function interpolations described [here](/docs/configuration/interpolation#bloblang-queries).
+The URL and header values of this type can be dynamically set using function interpolations described xref:configuration:interpolation.adoc#bloblang-queries[here].
 
-### Streaming
+== Streaming
 
-If you enable streaming then Benthos will consume the body of the response as a continuous stream of data, breaking messages out following a chosen scanner. This allows you to consume APIs that provide long lived streamed data feeds (such as Twitter).
+If you enable streaming then Redpanda Connect will consume the body of the response as a continuous stream of data, breaking messages out following a chosen scanner. This allows you to consume APIs that provide long lived streamed data feeds (such as Twitter).
 
-### Pagination
+== Pagination
 
-This input supports interpolation functions in the `+"`url` and `headers`"+` fields where data from the previous successfully consumed message (if there was one) can be referenced. This can be used in order to support basic levels of pagination. However, in cases where pagination depends on logic it is recommended that you use an `+"[`http` processor](/docs/components/processors/http) instead, often combined with a [`generate` input](/docs/components/inputs/generate)"+` in order to schedule the processor.`).
+This input supports interpolation functions in the `+"`url` and `headers`"+` fields where data from the previous successfully consumed message (if there was one) can be referenced. This can be used in order to support basic levels of pagination. However, in cases where pagination depends on logic it is recommended that you use an `+"xref:components:processors/http.adoc[`http` processor] instead, often combined with a xref:components:inputs/generate.adoc[`generate` input]"+` in order to schedule the processor.`).
 		Example(
 			"Basic Pagination",
 			"Interpolation functions within the `url` and `headers` fields can be used to reference the previously consumed message, which allows simple pagination.",
@@ -73,7 +74,7 @@ rate_limit_resources:
 }
 
 func init() {
-	err := service.RegisterBatchInput(
+	service.MustRegisterBatchInput(
 		"http_client", httpClientInputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 			rdr, err := newHTTPClientInputFromParsed(conf, mgr)
@@ -82,9 +83,6 @@ func init() {
 			}
 			return service.AutoRetryNacksBatchedToggled(conf, rdr)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -93,12 +91,12 @@ type httpClientInput struct {
 	client       *httpclient.Client
 	prevResponse service.MessageBatch
 
-	codecCtor       interop.FallbackReaderCodec
+	codecCtor       codec.DeprecatedFallbackCodec
 	reconnectStream bool
 	dropEmptyBodies bool
 
 	codecMut sync.Mutex
-	codec    interop.FallbackReaderStream
+	codec    codec.DeprecatedFallbackStream
 }
 
 func newHTTPClientInputFromParsed(conf *service.ParsedConfig, mgr *service.Resources) (*httpClientInput, error) {
@@ -107,7 +105,7 @@ func newHTTPClientInputFromParsed(conf *service.ParsedConfig, mgr *service.Resou
 		return nil, err
 	}
 
-	var codecCtor interop.FallbackReaderCodec
+	var codecCtor codec.DeprecatedFallbackCodec
 
 	streamEnabled, err := conf.FieldBool("stream", "enabled")
 	if err != nil {
@@ -116,7 +114,7 @@ func newHTTPClientInputFromParsed(conf *service.ParsedConfig, mgr *service.Resou
 	if streamEnabled {
 		// Timeout should be left at zero if we are streaming.
 		oldConf.Timeout = 0
-		if codecCtor, err = interop.OldReaderCodecFromParsed(conf.Namespace("stream")); err != nil {
+		if codecCtor, err = codec.DeprecatedCodecFromParsed(conf.Namespace("stream")); err != nil {
 			return nil, err
 		}
 	}
@@ -180,7 +178,7 @@ func (h *httpClientInput) Connect(ctx context.Context) (err error) {
 
 	if h.codec, err = h.codecCtor.Create(res.Body, func(ctx context.Context, err error) error {
 		return nil
-	}, scanner.SourceDetails{}); err != nil {
+	}, service.NewScannerSourceDetails()); err != nil {
 		res.Body.Close()
 		return err
 	}

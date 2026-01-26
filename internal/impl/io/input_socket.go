@@ -1,21 +1,27 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/codec/interop"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service/codec"
 )
 
 const (
-	isFieldNetwork = "network"
-	isFieldAddress = "address"
+	isFieldNetwork            = "network"
+	isFieldAddress            = "address"
+	isFieldTls                = "tls"
+	isFieldOpenMessageMapping = "open_message_mapping"
 )
 
 func socketInputSpec() *service.ConfigSpec {
@@ -30,12 +36,17 @@ func socketInputSpec() *service.ConfigSpec {
 				Description("The address to connect to.").
 				Examples("/tmp/benthos.sock", "127.0.0.1:6000"),
 			service.NewAutoRetryNacksToggleField(),
+			service.NewBloblangField(isFieldOpenMessageMapping).
+				Description("An optional xref:guides:bloblang/about.adoc[Bloblang mapping] which should evaluate to a string which will be sent upstream before the downstream data flow starts.").
+				Example(`root = "username,password"`).
+				Optional(),
+			service.NewTLSToggledField(isFieldTls),
 		).
-		Fields(interop.OldReaderCodecFields("lines")...)
+		Fields(codec.DeprecatedCodecFields("lines")...)
 }
 
 func init() {
-	err := service.RegisterBatchInput("socket", socketInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
+	service.MustRegisterBatchInput("socket", socketInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 		i, err := newSocketReaderFromParsed(conf, mgr)
 		if err != nil {
 			return nil, err
@@ -43,20 +54,20 @@ func init() {
 		// TODO: Inject async cut off?
 		return service.AutoRetryNacksBatchedToggled(conf, i)
 	})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type socketReader struct {
 	log *service.Logger
 
-	address   string
-	network   string
-	codecCtor interop.FallbackReaderCodec
+	address            string
+	network            string
+	tlsEnabled         bool
+	tlsConf            *tls.Config
+	codecCtor          codec.DeprecatedFallbackCodec
+	openMessageMapping *bloblang.Executor
 
 	codecMut sync.Mutex
-	codec    interop.FallbackReaderStream
+	codec    codec.DeprecatedFallbackStream
 }
 
 func newSocketReaderFromParsed(pConf *service.ParsedConfig, mgr *service.Resources) (rdr *socketReader, err error) {
@@ -69,8 +80,17 @@ func newSocketReaderFromParsed(pConf *service.ParsedConfig, mgr *service.Resourc
 	if rdr.network, err = pConf.FieldString(isFieldNetwork); err != nil {
 		return
 	}
-	if rdr.codecCtor, err = interop.OldReaderCodecFromParsed(pConf); err != nil {
+	if rdr.tlsConf, rdr.tlsEnabled, err = pConf.FieldTLSToggled(isFieldTls); err != nil {
+		return nil, err
+	}
+
+	if rdr.codecCtor, err = codec.DeprecatedCodecFromParsed(pConf); err != nil {
 		return
+	}
+	if pConf.Contains(isFieldOpenMessageMapping) {
+		if rdr.openMessageMapping, err = pConf.FieldBloblang(isFieldOpenMessageMapping); err != nil {
+			return nil, err
+		}
 	}
 	return
 }
@@ -88,12 +108,44 @@ func (s *socketReader) Connect(ctx context.Context) error {
 		return err
 	}
 
+	if s.tlsEnabled && s.tlsConf != nil {
+		tlsConn := tls.Client(conn, s.tlsConf)
+
+		err = tlsConn.Handshake()
+		if err != nil {
+			return err
+		}
+
+		conn = tlsConn
+	}
+
 	if s.codec, err = s.codecCtor.Create(conn, func(ctx context.Context, err error) error {
 		return nil
-	}, scanner.SourceDetails{}); err != nil {
+	}, service.NewScannerSourceDetails()); err != nil {
 		conn.Close()
 		return err
 	}
+
+	if s.openMessageMapping != nil {
+		var openMessage string
+		if queryResult, err := s.openMessageMapping.Query(nil); err != nil {
+			return fmt.Errorf("open message mapping failed: %s", err)
+		} else {
+			var ok bool
+			if openMessage, ok = queryResult.(string); !ok {
+				return fmt.Errorf("open message mapping returned non-string result: %T", queryResult)
+			}
+
+			if openMessage == "" {
+				return errors.New("open message mapping returned empty string")
+			}
+		}
+
+		if _, err := conn.Write([]byte(openMessage)); err != nil {
+			return fmt.Errorf("failed to write open message: %s", err)
+		}
+	}
+
 	return nil
 }
 

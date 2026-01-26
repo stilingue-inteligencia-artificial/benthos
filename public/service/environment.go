@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -6,24 +8,25 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	ibloblang "github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	iprocessors "github.com/benthosdev/benthos/v4/internal/component/input/processors"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/output/batcher"
-	oprocessors "github.com/benthosdev/benthos/v4/internal/component/output/processors"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/internal/component/tracer"
-	"github.com/benthosdev/benthos/v4/internal/config"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	ibloblang "github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	iprocessors "github.com/redpanda-data/benthos/v4/internal/component/input/processors"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/output/batcher"
+	oprocessors "github.com/redpanda-data/benthos/v4/internal/component/output/processors"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/component/scanner"
+	"github.com/redpanda-data/benthos/v4/internal/component/tracer"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/template"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 // Environment is a collection of Benthos component plugins that can be used in
@@ -56,12 +59,41 @@ func NewEnvironment() *Environment {
 	return globalEnvironment.Clone()
 }
 
+// NewEmptyEnvironment creates a new environment with zero registered plugins.
+func NewEmptyEnvironment() *Environment {
+	return &Environment{
+		internal:    bundle.NewEnvironment(),
+		bloblangEnv: bloblang.NewEmptyEnvironment(),
+		fs:          ifs.OS(),
+	}
+}
+
 // Clone an environment, creating a new environment containing the same plugins
 // that can be modified independently of the source.
 func (e *Environment) Clone() *Environment {
 	return &Environment{
 		internal:    e.internal.Clone(),
-		bloblangEnv: e.bloblangEnv.WithoutFunctions().WithoutMethods(),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// Without creates a clone of an existing environment with a variadic list of
+// plugin names excluded from the resulting environment.
+func (e *Environment) Without(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.Without(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// With creates a clone of an existing environment with only a variadic list of
+// plugin names included from the resulting environment.
+func (e *Environment) With(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.With(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
 		fs:          e.fs,
 	}
 }
@@ -147,6 +179,20 @@ func (e *Environment) WalkBuffers(fn func(name string, config *ConfigView)) {
 	}
 }
 
+// GetBufferConfig attempts to obtain a buffer configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetBufferConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllBuffers.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
+}
+
 // RegisterCache attempts to register a new cache plugin by providing a
 // description of the configuration for the plugin as well as a constructor for
 // the cache itself. The constructor will be called for each instantiation of
@@ -179,6 +225,20 @@ func (e *Environment) WalkCaches(fn func(name string, config *ConfigView)) {
 	}
 }
 
+// GetCacheConfig attempts to obtain a cache configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetCacheConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllCaches.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
+}
+
 // RegisterInput attempts to register a new input plugin by providing a
 // description of the configuration for the plugin as well as a constructor for
 // the input itself. The constructor will be called for each instantiation of
@@ -200,7 +260,7 @@ func (e *Environment) RegisterInput(name string, spec *ConfigSpec, ctor InputCon
 		if err != nil {
 			return nil, err
 		}
-		rdr := newAirGapReader(i)
+		rdr := newAirGapReader(nm, i)
 		return input.NewAsyncReader(conf.Type, rdr, nm)
 	}), componentSpec)
 }
@@ -232,7 +292,7 @@ func (e *Environment) RegisterBatchInput(name string, spec *ConfigSpec, ctor Bat
 		}); ok {
 			return u.Unwrap(), nil
 		}
-		rdr := newAirGapBatchReader(i)
+		rdr := newAirGapBatchReader(nm, i)
 		return input.NewAsyncReader(conf.Type, rdr, nm)
 	}), componentSpec)
 }
@@ -246,6 +306,20 @@ func (e *Environment) WalkInputs(fn func(name string, config *ConfigView)) {
 			component: v,
 		})
 	}
+}
+
+// GetInputConfig attempts to obtain an input configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetInputConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllInputs.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
 }
 
 // RegisterOutput attempts to register a new output plugin by providing a
@@ -269,7 +343,7 @@ func (e *Environment) RegisterOutput(name string, spec *ConfigSpec, ctor OutputC
 			if maxInFlight < 1 {
 				return nil, fmt.Errorf("invalid maxInFlight parameter: %v", maxInFlight)
 			}
-			w := newAirGapWriter(op)
+			w := newAirGapWriter(nm, op)
 			o, err := output.NewAsyncWriter(conf.Type, maxInFlight, w, nm)
 			if err != nil {
 				return nil, err
@@ -315,7 +389,7 @@ func (e *Environment) RegisterBatchOutput(name string, spec *ConfigSpec, ctor Ba
 				return nil, fmt.Errorf("invalid maxInFlight parameter: %v", maxInFlight)
 			}
 
-			w := newAirGapBatchWriter(op)
+			w := newAirGapBatchWriter(nm, op)
 			o, err := output.NewAsyncWriter(conf.Type, maxInFlight, w, nm)
 			if err != nil {
 				return nil, err
@@ -334,6 +408,20 @@ func (e *Environment) WalkOutputs(fn func(name string, config *ConfigView)) {
 			component: v,
 		})
 	}
+}
+
+// GetOutputConfig attempts to obtain an output configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetOutputConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllOutputs.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
 }
 
 // RegisterProcessor attempts to register a new processor plugin by providing
@@ -401,6 +489,20 @@ func (e *Environment) WalkProcessors(fn func(name string, config *ConfigView)) {
 	}
 }
 
+// GetProcessorConfig attempts to obtain a processor configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetProcessorConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllProcessors.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
+}
+
 // RegisterRateLimit attempts to register a new rate limit plugin by providing
 // a description of the configuration for the plugin as well as a constructor
 // for the rate limit itself. The constructor will be called for each
@@ -433,6 +535,20 @@ func (e *Environment) WalkRateLimits(fn func(name string, config *ConfigView)) {
 	}
 }
 
+// GetRateLimitConfig attempts to obtain a rate limit configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetRateLimitConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllRateLimits.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
+}
+
 // RegisterMetricsExporter attempts to register a new metrics exporter plugin by
 // providing a description of the configuration for the plugin as well as a
 // constructor for the metrics exporter itself.
@@ -463,6 +579,20 @@ func (e *Environment) WalkMetrics(fn func(name string, config *ConfigView)) {
 			component: v,
 		})
 	}
+}
+
+// GetMetricsConfig attempts to obtain a metrics exporter configuration spec by
+// the component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetMetricsConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllMetrics.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
 }
 
 // RegisterOtelTracerProvider attempts to register a new open telemetry tracer
@@ -502,6 +632,20 @@ func (e *Environment) WalkTracers(fn func(name string, config *ConfigView)) {
 	}
 }
 
+// GetTracerConfig attempts to obtain a tracer configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetTracerConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllTracers.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
+}
+
 // RegisterBatchScannerCreator attempts to register a new batched scanner plugin
 // by providing a description of the configuration for the plugin as well as a
 // constructor for the scanner creator itself. The constructor will be called
@@ -535,6 +679,27 @@ func (e *Environment) WalkScanners(fn func(name string, config *ConfigView)) {
 	}
 }
 
+// GetScannerConfig attempts to obtain a scanner configuration spec by the
+// component name. Returns a nil ConfigView and false if the component is
+// unknown.
+func (e *Environment) GetScannerConfig(name string) (*ConfigView, bool) {
+	c, exists := bundle.AllScanners.DocsFor(name)
+	if !exists {
+		return nil, false
+	}
+	return &ConfigView{
+		prov:      e.internal,
+		component: c,
+	}, true
+}
+
+// RegisterTemplateYAML attempts to register a template, defined as a YAML
+// document, to the environment such that it may be used similarly to any other
+// component plugin.
+func (e *Environment) RegisterTemplateYAML(yamlStr string) error {
+	return template.RegisterTemplateYAML(e.internal, e.getBloblangParserEnv(), []byte(yamlStr))
+}
+
 // XFormatConfigJSON returns a byte slice of the Benthos configuration spec
 // formatted as a JSON object. The schema of this method is undocumented and is
 // not intended for general use.
@@ -543,4 +708,96 @@ func (e *Environment) WalkScanners(fn func(name string, config *ConfigView)) {
 // signature and/or behaviour changed outside of major version bumps.
 func XFormatConfigJSON() ([]byte, error) {
 	return json.Marshal(config.Spec())
+}
+
+//------------------------------------------------------------------------------
+
+// WithBuffers returns a copy of Environment with a cloned plugin registry of
+// buffers, where only the specified plugins are included.
+func (e *Environment) WithBuffers(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithBuffers(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithCaches returns a copy of Environment with a cloned plugin registry of
+// caches, where only the specified plugins are included.
+func (e *Environment) WithCaches(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithCaches(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithInputs returns a copy of Environment with a cloned plugin registry of
+// inputs, where only the specified plugins are included.
+func (e *Environment) WithInputs(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithInputs(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithOutputs returns a copy of Environment with a cloned plugin registry of
+// outputs, where only the specified plugins are included.
+func (e *Environment) WithOutputs(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithOutputs(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithProcessors returns a copy of Environment with a cloned plugin registry
+// of processors, where only the specified plugins are included.
+func (e *Environment) WithProcessors(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithProcessors(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithRateLimits returns a copy of Environment with a cloned plugin registry
+// of rate limits, where only the specified plugins are included.
+func (e *Environment) WithRateLimits(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithRateLimits(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithMetrics returns a copy of Environment with a cloned plugin registry of
+// metrics, where only the specified plugins are included.
+func (e *Environment) WithMetrics(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithMetrics(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithTracers returns a copy of Environment with a cloned plugin registry of
+// tracers, where only the specified plugins are included.
+func (e *Environment) WithTracers(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithTracers(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
+}
+
+// WithScanners returns a copy of Environment with a cloned plugin registry
+// of scanners, where only the specified plugins are included.
+func (e *Environment) WithScanners(names ...string) *Environment {
+	return &Environment{
+		internal:    e.internal.WithScanners(names...),
+		bloblangEnv: e.bloblangEnv.Clone(),
+		fs:          e.fs,
+	}
 }

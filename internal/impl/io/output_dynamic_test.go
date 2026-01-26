@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -12,15 +14,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	bmock "github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	bmock "github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestDynamicOutputAPI(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	gMux := mux.NewRouter()
@@ -39,6 +41,8 @@ func TestDynamicOutputAPI(t *testing.T) {
 	tChan := make(chan message.Transaction)
 	resChan := make(chan error, 1)
 	require.NoError(t, o.Consume(tChan))
+
+	o.TriggerStartConsuming()
 
 	req := httptest.NewRequest(http.MethodGet, "/outputs", http.NoBody)
 	res := httptest.NewRecorder()

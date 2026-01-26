@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package metrics
 
 import (
@@ -5,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
 )
 
 // Tracker keeps a reference to observed metrics and is capable of flushing the

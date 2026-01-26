@@ -1,10 +1,18 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"path/filepath"
 	"sort"
@@ -15,11 +23,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func socketServerInputFromConf(t testing.TB, confStr string, bits ...any) (input.Streamed, string) {
@@ -34,10 +42,12 @@ func socketServerInputFromConf(t testing.TB, confStr string, bits ...any) (input
 	s, err := mgr.NewInput(conf)
 	require.NoError(t, err)
 
+	s.TriggerStartConsuming()
+
 	addr := ""
 	require.Eventually(t, func() bool {
-		_ = mgr.AccessCache(context.Background(), "testcache", func(v cache.V1) {
-			res, _ := v.Get(context.Background(), "socket_server_address")
+		_ = mgr.AccessCache(t.Context(), "testcache", func(v cache.V1) {
+			res, _ := v.Get(t.Context(), "socket_server_address")
 			addr = string(res)
 		})
 		return addr != ""
@@ -47,7 +57,7 @@ func socketServerInputFromConf(t testing.TB, confStr string, bits ...any) (input
 }
 
 func TestSocketServerBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -112,7 +122,7 @@ socket_server:
 }
 
 func TestSocketServerRetries(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -192,7 +202,7 @@ socket_server:
 }
 
 func TestSocketServerWriteClosed(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -221,7 +231,7 @@ socket_server:
 }
 
 func TestSocketServerRecon(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -292,7 +302,7 @@ socket_server:
 }
 
 func TestSocketServerMpart(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -357,7 +367,7 @@ socket_server:
 }
 
 func TestSocketServerMpartCDelim(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -422,7 +432,7 @@ socket_server:
 }
 
 func TestSocketServerMpartSdown(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -487,8 +497,408 @@ socket_server:
 	wg.Wait()
 }
 
+func TestUnixgramSocketServerBasic(t *testing.T) {
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
+	defer done()
+
+	tmpDir := t.TempDir()
+
+	rdr, addr := socketServerInputFromConf(t, `
+socket_server:
+  network: unixgram
+  address: %v
+`, filepath.Join(tmpDir, "benthos.sock"))
+
+	defer func() {
+		rdr.TriggerStopConsuming()
+		assert.NoError(t, rdr.WaitForClose(ctx))
+	}()
+
+	conn, err := net.Dial("unixgram", addr)
+	require.NoError(t, err)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+		_, cerr := conn.Write([]byte("foo\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("bar\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("baz\n"))
+		require.NoError(t, cerr)
+
+		wg.Done()
+	}()
+
+	readNextMsg := func() (message.Batch, error) {
+		var tran message.Transaction
+		select {
+		case tran = <-rdr.TransactionChan():
+			require.NoError(t, tran.Ack(ctx, nil))
+		case <-time.After(time.Second):
+			return nil, errors.New("timed out")
+		}
+		return tran.Payload, nil
+	}
+
+	exp := [][]byte{[]byte("foo")}
+	msg, err := readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("bar")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("baz")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	wg.Wait()
+	conn.Close()
+}
+
+func TestUnixgramSocketServerRetries(t *testing.T) {
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
+	defer done()
+
+	tmpDir := t.TempDir()
+
+	rdr, addr := socketServerInputFromConf(t, `
+socket_server:
+  network: unixgram
+  address: %v
+`, filepath.Join(tmpDir, "benthos.sock"))
+
+	defer func() {
+		rdr.TriggerStopConsuming()
+		assert.NoError(t, rdr.WaitForClose(ctx))
+	}()
+
+	conn, err := net.Dial("unixgram", addr)
+	require.NoError(t, err)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+		_, cerr := conn.Write([]byte("foo\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("bar\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("baz\n"))
+		require.NoError(t, cerr)
+
+		wg.Done()
+	}()
+
+	readNextMsg := func(reject bool) (message.Batch, error) {
+		var tran message.Transaction
+		select {
+		case tran = <-rdr.TransactionChan():
+			var res error
+			if reject {
+				res = errors.New("test err")
+			}
+			require.NoError(t, tran.Ack(ctx, res))
+		case <-time.After(time.Second * 5):
+			return nil, errors.New("timed out")
+		}
+		return tran.Payload, nil
+	}
+
+	exp := [][]byte{[]byte("foo")}
+	msg, err := readNextMsg(false)
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("bar")}
+	msg, err = readNextMsg(true)
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	expRemaining := []string{"bar", "baz"}
+	actRemaining := []string{}
+
+	msg, err = readNextMsg(false)
+	require.NoError(t, err)
+	require.Equal(t, 1, msg.Len())
+	actRemaining = append(actRemaining, string(msg.Get(0).AsBytes()))
+
+	msg, err = readNextMsg(false)
+	require.NoError(t, err)
+	require.Equal(t, 1, msg.Len())
+	actRemaining = append(actRemaining, string(msg.Get(0).AsBytes()))
+
+	sort.Strings(actRemaining)
+	assert.Equal(t, expRemaining, actRemaining)
+
+	wg.Wait()
+	conn.Close()
+}
+
+func TestUnixgramServerWriteToClosed(t *testing.T) {
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
+	defer done()
+
+	tmpDir := t.TempDir()
+
+	rdr, addr := socketServerInputFromConf(t, `
+socket_server:
+  network: unixgram
+  address: %v
+`, filepath.Join(tmpDir, "benthos.sock"))
+
+	conn, err := net.Dial("unixgram", addr)
+	require.NoError(t, err)
+
+	_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+	rdr.TriggerStopConsuming()
+	assert.NoError(t, rdr.WaitForClose(ctx))
+
+	// Just make sure data written doesn't panic
+	_, _ = conn.Write([]byte("bar\n"))
+
+	_, open := <-rdr.TransactionChan()
+	assert.False(t, open)
+
+	conn.Close()
+}
+
+func TestUnixgramSocketServerReconnect(t *testing.T) {
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
+	defer done()
+
+	tmpDir := t.TempDir()
+
+	rdr, addr := socketServerInputFromConf(t, `
+socket_server:
+  network: unixgram
+  address: %v
+`, filepath.Join(tmpDir, "benthos.sock"))
+
+	defer func() {
+		rdr.TriggerStopConsuming()
+		assert.NoError(t, rdr.WaitForClose(ctx))
+	}()
+
+	conn, err := net.Dial("unixgram", addr)
+	require.NoError(t, err)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+		_, cerr := conn.Write([]byte("foo\n"))
+		require.NoError(t, cerr)
+
+		conn.Close()
+
+		conn, cerr = net.Dial("unixgram", addr)
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("bar\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("baz\n"))
+		require.NoError(t, cerr)
+
+		wg.Done()
+	}()
+
+	readNextMsg := func() (message.Batch, error) {
+		var tran message.Transaction
+		select {
+		case tran = <-rdr.TransactionChan():
+			require.NoError(t, tran.Ack(ctx, nil))
+		case <-time.After(time.Second):
+			return nil, errors.New("timed out")
+		}
+		return tran.Payload, nil
+	}
+
+	exp := [][]byte{[]byte("foo")}
+	msg, err := readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("bar")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("baz")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	wg.Wait()
+	conn.Close()
+}
+
+func TestUnixgramSocketServerCustomDelim(t *testing.T) {
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
+	defer done()
+
+	tmpDir := t.TempDir()
+
+	rdr, addr := socketServerInputFromConf(t, `
+socket_server:
+  network: unixgram
+  address: %v
+  codec: delim:@
+`, filepath.Join(tmpDir, "benthos.sock"))
+
+	defer func() {
+		rdr.TriggerStopConsuming()
+		assert.NoError(t, rdr.WaitForClose(ctx))
+	}()
+
+	conn, err := net.Dial("unixgram", addr)
+	require.NoError(t, err)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+		_, cerr := conn.Write([]byte("foo@"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("bar@"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("@"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("baz\n@@"))
+		require.NoError(t, cerr)
+
+		wg.Done()
+	}()
+
+	readNextMsg := func() (message.Batch, error) {
+		var tran message.Transaction
+		select {
+		case tran = <-rdr.TransactionChan():
+			require.NoError(t, tran.Ack(ctx, nil))
+		case <-time.After(time.Second):
+			return nil, errors.New("timed out")
+		}
+		return tran.Payload, nil
+	}
+
+	exp := [][]byte{[]byte("foo")}
+	msg, err := readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("bar")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("baz\n")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	wg.Wait()
+	conn.Close()
+}
+
+func TestUnixgramSocketServerShutdown(t *testing.T) {
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
+	defer done()
+
+	tmpDir := t.TempDir()
+
+	rdr, addr := socketServerInputFromConf(t, `
+socket_server:
+  network: unixgram
+  address: %v
+`, filepath.Join(tmpDir, "benthos.sock"))
+
+	defer func() {
+		rdr.TriggerStopConsuming()
+		assert.NoError(t, rdr.WaitForClose(ctx))
+	}()
+
+	conn, err := net.Dial("unixgram", addr)
+	require.NoError(t, err)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+		_, cerr := conn.Write([]byte("foo\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("bar\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("\n"))
+		require.NoError(t, cerr)
+
+		_, cerr = conn.Write([]byte("baz\n"))
+		require.NoError(t, cerr)
+
+		conn.Close()
+		wg.Done()
+	}()
+
+	readNextMsg := func() (message.Batch, error) {
+		var tran message.Transaction
+		select {
+		case tran = <-rdr.TransactionChan():
+			require.NoError(t, tran.Ack(ctx, nil))
+		case <-time.After(time.Second):
+			return nil, errors.New("timed out")
+		}
+		return tran.Payload, nil
+	}
+
+	exp := [][]byte{[]byte("foo")}
+	msg, err := readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("bar")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	exp = [][]byte{[]byte("baz")}
+	msg, err = readNextMsg()
+	require.NoError(t, err)
+	assert.Equal(t, exp, message.GetAllBytes(msg))
+
+	wg.Wait()
+}
+
 func TestSocketUDPServerBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -553,7 +963,7 @@ socket_server:
 }
 
 func TestSocketUDPServerRetries(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -633,7 +1043,7 @@ socket_server:
 }
 
 func TestUDPServerWriteToClosed(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -660,7 +1070,7 @@ socket_server:
 }
 
 func TestSocketUDPServerReconnect(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -729,7 +1139,7 @@ socket_server:
 }
 
 func TestSocketUDPServerCustomDelim(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -803,7 +1213,7 @@ socket_server:
 }
 
 func TestSocketUDPServerShutdown(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -876,7 +1286,7 @@ socket_server:
 }
 
 func TestTCPSocketServerBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -941,7 +1351,7 @@ socket_server:
 }
 
 func TestTCPSocketServerReconnect(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -1011,7 +1421,7 @@ socket_server:
 }
 
 func TestTCPSocketServerMultipart(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -1075,7 +1485,7 @@ socket_server:
 }
 
 func TestTCPSocketServerMultipartCustomDelim(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -1139,7 +1549,7 @@ socket_server:
 }
 
 func TestTCPSocketServerMultipartShutdown(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*20)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -1203,7 +1613,7 @@ socket_server:
 }
 
 func TestTLSSocketServerBasic(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*20)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	rdr, addr := socketServerInputFromConf(t, `
@@ -1269,4 +1679,82 @@ socket_server:
 
 	wg.Wait()
 	conn.Close()
+}
+
+func TestTLSSocketServerClientAuthRequireValid(t *testing.T) {
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*20)
+	defer done()
+
+	rdr, addr := socketServerInputFromConf(t, `
+socket_server:
+  network: tls
+  address: 127.0.0.1:0
+  tls:
+    self_signed: true
+    client_auth: "require_valid"
+`)
+
+	defer func() {
+		rdr.TriggerStopConsuming()
+		assert.NoError(t, rdr.WaitForClose(tCtx))
+	}()
+
+	cert, err := createSelfSignedCertificate()
+	require.NoError(t, err)
+
+	conn, err := tls.Dial("tcp", addr, &tls.Config{
+		InsecureSkipVerify: true,
+		Certificates:       []tls.Certificate{cert},
+	})
+	require.NoError(t, err)
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		_ = conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+		_, cerr := conn.Write([]byte("foo\n"))
+		require.NoError(t, cerr)
+
+		wg.Done()
+	}()
+
+	readNextMsg := func() (message.Batch, error) {
+		var tran message.Transaction
+		select {
+		case tran = <-rdr.TransactionChan():
+			require.NoError(t, tran.Ack(tCtx, nil))
+		case <-time.After(time.Second):
+			return nil, errors.New("timed out")
+		}
+		return tran.Payload, nil
+	}
+
+	_, err = readNextMsg()
+	require.Error(t, err) // we'll accept only valid certs!
+
+	wg.Wait()
+	conn.Close()
+}
+
+func createSelfSignedCertificate() (tls.Certificate, error) {
+	priv, _ := ecdsa.GenerateKey(elliptic.P521(), rand.Reader)
+	certOptions := &x509.Certificate{
+		SerialNumber: &big.Int{},
+	}
+
+	certBytes, _ := x509.CreateCertificate(rand.Reader, certOptions, certOptions, &priv.PublicKey, priv)
+	pemcert := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
+	key, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	keyBytes := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: key})
+	cert, err := tls.X509KeyPair(pemcert, keyBytes)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+
+	return cert, nil
 }

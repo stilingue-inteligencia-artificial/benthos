@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 // Package extended contains component implementations that have a larger
 // dependency footprint but do not interact with external systems (so an
 // extension of pure components)
@@ -10,12 +12,5 @@ package extended
 
 import (
 	// Import pure but larger packages.
-	_ "github.com/benthosdev/benthos/v4/internal/impl/awk"
-	_ "github.com/benthosdev/benthos/v4/internal/impl/jsonpath"
-	_ "github.com/benthosdev/benthos/v4/internal/impl/lang"
-	_ "github.com/benthosdev/benthos/v4/internal/impl/msgpack"
-	_ "github.com/benthosdev/benthos/v4/internal/impl/parquet"
-	_ "github.com/benthosdev/benthos/v4/internal/impl/protobuf"
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure/extended"
-	_ "github.com/benthosdev/benthos/v4/internal/impl/xml"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure/extended"
 )

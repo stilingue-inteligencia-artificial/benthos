@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package output
 
 import (
@@ -13,18 +15,23 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/tracing"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/tracing"
 )
 
 // AsyncSink is a type that writes Benthos messages to a third party sink. If
 // the protocol supports a form of acknowledgement then it will be returned by
 // the call to Write.
 type AsyncSink interface {
+	// ConnectionTest attempts to establish whether the component is capable of
+	// creating a connection. This will potentially require and test network
+	// connectivity, but does not require the component to be initialized.
+	ConnectionTest(ctx context.Context) component.ConnectionTestResults
+
 	// Connect attempts to establish a connection to the sink, if
 	// unsuccessful returns an error. If the attempt is successful (or not
 	// necessary) returns nil.
@@ -42,18 +49,20 @@ type AsyncSink interface {
 
 // AsyncWriter is an output type that writes messages to a writer.Type.
 type AsyncWriter struct {
-	isConnected int32
+	connection atomic.Pointer[component.ConnectionStatus]
 
 	typeStr     string
 	maxInflight int
 	writer      AsyncSink
 
+	mgr    component.Observability
 	log    log.Modular
 	stats  metrics.Type
 	tracer trace.TracerProvider
 
 	transactions <-chan message.Transaction
 
+	startOnce     sync.Once
 	shutSig       *shutdown.Signaller
 	reconnectedAt time.Time
 }
@@ -64,6 +73,7 @@ func NewAsyncWriter(typeStr string, maxInflight int, w AsyncSink, mgr component.
 		typeStr:       typeStr,
 		maxInflight:   maxInflight,
 		writer:        w,
+		mgr:           mgr,
 		log:           mgr.Logger(),
 		stats:         mgr.Metrics(),
 		tracer:        mgr.Tracer(),
@@ -71,6 +81,7 @@ func NewAsyncWriter(typeStr string, maxInflight int, w AsyncSink, mgr component.
 		shutSig:       shutdown.NewSignaller(),
 		reconnectedAt: time.Now(),
 	}
+	aWriter.connection.Store(component.ConnectionPending(mgr))
 	return aWriter, nil
 }
 
@@ -103,7 +114,7 @@ func (w *AsyncWriter) loop() {
 	defer func() {
 		_ = w.writer.Close(context.Background())
 
-		atomic.StoreInt32(&w.isConnected, 0)
+		w.connection.Store(component.ConnectionClosed(w.mgr))
 		w.shutSig.TriggerHasStopped()
 	}()
 
@@ -121,7 +132,7 @@ func (w *AsyncWriter) loop() {
 				if w.shutSig.IsSoftStopSignalled() || errors.Is(err, component.ErrTypeClosed) {
 					return false
 				}
-
+				w.connection.Store(component.ConnectionFailing(w.mgr, err))
 				w.log.Error("Failed to connect to %v: %v\n", w.typeStr, err)
 				mFailedConn.Incr(1)
 
@@ -154,21 +165,21 @@ func (w *AsyncWriter) loop() {
 
 	w.log.Info("Output type %v is now active", w.typeStr)
 	mConn.Incr(1)
-	atomic.StoreInt32(&w.isConnected, 1)
+	w.connection.Store(component.ConnectionActive(w.mgr))
 
 	wg := sync.WaitGroup{}
 	wg.Add(w.maxInflight)
 
 	connectMut := sync.Mutex{}
 	connectLoop := func(msg message.Batch) (latency int64, err error) {
-		atomic.StoreInt32(&w.isConnected, 0)
+		w.connection.Store(component.ConnectionFailing(w.mgr, component.ErrNotConnected))
 
 		connectMut.Lock()
 		defer connectMut.Unlock()
 
 		// If another goroutine got here first and we're able to send over the
 		// connection, then we gracefully accept defeat.
-		if atomic.LoadInt32(&w.isConnected) == 1 {
+		if w.connection.Load().Connected {
 			if latency, err = w.latencyMeasuringWrite(closeLeisureCtx, msg); err != component.ErrNotConnected {
 				return
 			} else if err != nil {
@@ -184,7 +195,7 @@ func (w *AsyncWriter) loop() {
 				return
 			}
 			if latency, err = w.latencyMeasuringWrite(closeLeisureCtx, msg); err != component.ErrNotConnected {
-				atomic.StoreInt32(&w.isConnected, 1)
+				w.connection.Store(component.ConnectionActive(w.mgr))
 				mConn.Incr(1)
 				return
 			}
@@ -279,14 +290,28 @@ func (w *AsyncWriter) Consume(ts <-chan message.Transaction) error {
 		return component.ErrAlreadyStarted
 	}
 	w.transactions = ts
-	go w.loop()
 	return nil
 }
 
-// Connected returns a boolean indicating whether this output is currently
-// connected to its target.
-func (w *AsyncWriter) Connected() bool {
-	return atomic.LoadInt32(&w.isConnected) == 1
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (w *AsyncWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return w.writer.ConnectionTest(ctx)
+}
+
+// ConnectionStatus returns the status of the given output connection.
+func (w *AsyncWriter) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		w.connection.Load(),
+	}
+}
+
+// TriggerStartConsuming initiates async connection and consumption.
+func (w *AsyncWriter) TriggerStartConsuming() {
+	w.startOnce.Do(func() {
+		go w.loop()
+	})
 }
 
 // TriggerCloseNow shuts down the output and stops processing messages.

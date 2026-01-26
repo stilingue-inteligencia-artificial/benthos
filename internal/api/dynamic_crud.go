@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package api
 
 import (
@@ -197,6 +199,7 @@ func (d *Dynamic) HandleList(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleUptime is an http.HandleFunc for returning the uptime of the dynamic component.
 func (d *Dynamic) HandleUptime(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 

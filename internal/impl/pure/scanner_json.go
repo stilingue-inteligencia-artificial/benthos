@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -5,7 +7,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func jsonDocumentScannerSpec() *service.ConfigSpec {
@@ -18,13 +20,10 @@ func jsonDocumentScannerSpec() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterBatchScannerCreator("json_documents", jsonDocumentScannerSpec(),
+	service.MustRegisterBatchScannerCreator("json_documents", jsonDocumentScannerSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchScannerCreator, error) {
 			return &jsonDocumentScannerCreator{}, nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type jsonDocumentScannerCreator struct{}

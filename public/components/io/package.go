@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 // Package io contains component implementations that have a small dependency
 // footprint (mostly standard library) and interact with external systems via
 // the filesystem and/or network sockets.
@@ -10,5 +12,5 @@ package io
 
 import (
 	// Import only io packages.
-	_ "github.com/benthosdev/benthos/v4/internal/impl/io"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/io"
 )

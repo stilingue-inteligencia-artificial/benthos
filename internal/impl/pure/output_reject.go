@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -5,17 +7,17 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/field"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"reject", service.NewConfigSpec().
 			Stable().
 			Categories("Utility").
@@ -23,7 +25,7 @@ func init() {
 			Description(`
 The routing of messages after this output depends on the type of input it came from. For inputs that support propagating nacks upstream such as AMQP or NATS the message will be nacked. However, for inputs that are sequential such as files or Kafka the messages will simply be reprocessed from scratch.
 
-If you're still scratching your head as to when this output could be useful check out [the examples below](#examples).`).
+To learn when this output could be useful, see [the <<examples>>.`).
 			Example(
 				"Rejecting Failed Messages",
 				`
@@ -64,14 +66,11 @@ output:
 			out = interop.NewUnwrapInternalOutput(s)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type rejectWriter struct {
 	errExpr *field.Expression
-	log     log.Modular
+	mgr     component.Observability
 }
 
 func newRejectWriter(mgr bundle.NewManagement, errorString string) (*rejectWriter, error) {
@@ -82,7 +81,11 @@ func newRejectWriter(mgr bundle.NewManagement, errorString string) (*rejectWrite
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse error expression: %w", err)
 	}
-	return &rejectWriter{errExpr: errExpr, log: mgr.Logger()}, nil
+	return &rejectWriter{errExpr: errExpr, mgr: mgr}, nil
+}
+
+func (w *rejectWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestSucceeded(w.mgr).AsList()
 }
 
 func (w *rejectWriter) Connect(ctx context.Context) error {
@@ -93,7 +96,7 @@ func (w *rejectWriter) WriteBatch(ctx context.Context, msg message.Batch) error 
 	errStr, err := w.errExpr.String(0, msg)
 	if err != nil {
 		// Wow this would be awkward
-		w.log.Error("Reject message interpolation error: %v", err)
+		w.mgr.Logger().Error("Reject message interpolation error: %v", err)
 		return fmt.Errorf("reject message interpolation error: %w", err)
 	}
 	return errors.New(errStr)

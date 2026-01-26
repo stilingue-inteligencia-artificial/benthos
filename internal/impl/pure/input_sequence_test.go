@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -12,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
 )
 
 func writeFiles(t *testing.T, dir string, nameToContent map[string]string) {
@@ -25,18 +27,24 @@ func writeFiles(t *testing.T, dir string, nameToContent map[string]string) {
 	}
 }
 
-func testInput(t testing.TB, confPattern string, args ...any) input.Streamed {
-	iConf, err := testutil.InputFromYAML(fmt.Sprintf(confPattern, args...))
+func testInputf(t testing.TB, confPattern string, args ...any) input.Streamed {
+	return testInput(t, fmt.Sprintf(confPattern, args...))
+}
+
+func testInput(t testing.TB, confStr string) input.Streamed {
+	iConf, err := testutil.InputFromYAML(confStr)
 	require.NoError(t, err)
 
 	i, err := mock.NewManager().NewInput(iConf)
 	require.NoError(t, err)
 
+	i.TriggerStartConsuming()
+
 	return i
 }
 
 func TestSequenceHappy(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -51,7 +59,7 @@ func TestSequenceHappy(t *testing.T) {
 
 	writeFiles(t, tmpDir, files)
 
-	rdr := testInput(t, `
+	rdr := testInputf(t, `
 sequence:
   inputs:
     - file:
@@ -92,7 +100,7 @@ consumeLoop:
 }
 
 func TestSequenceJoins(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -109,7 +117,7 @@ func TestSequenceJoins(t *testing.T) {
 
 	writeFiles(t, tmpDir, files)
 
-	rdr := testInput(t, `
+	rdr := testInputf(t, `
 sequence:
   sharded_join:
     type: full-outer
@@ -157,7 +165,7 @@ consumeLoop:
 }
 
 func TestSequenceJoinsMergeStrategies(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -297,7 +305,7 @@ func TestSequenceJoinsBig(t *testing.T) {
 	t.Skip()
 	t.Parallel()
 
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -333,7 +341,7 @@ func TestSequenceJoinsBig(t *testing.T) {
 	require.NoError(t, ndjsonFile.Close())
 	require.NoError(t, csvFile.Close())
 
-	rdr := testInput(t, `
+	rdr := testInputf(t, `
 sequence:
   sharded_join:
     type: full-outer
@@ -372,7 +380,7 @@ consumeLoop:
 }
 
 func TestSequenceSad(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -403,6 +411,8 @@ sequence:
 
 	rdr, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
+
+	rdr.TriggerStartConsuming()
 
 	exp := []string{
 		"foo", "bar", "baz",
@@ -453,7 +463,7 @@ sequence:
 }
 
 func TestSequenceEarlyTermination(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	t.Parallel()
@@ -475,6 +485,8 @@ sequence:
 
 	rdr, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
+
+	rdr.TriggerStartConsuming()
 
 	select {
 	case tran, open := <-rdr.TransactionChan():

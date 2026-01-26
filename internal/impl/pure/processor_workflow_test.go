@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -15,14 +17,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/impl/pure"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/impl/pure"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestWorkflowDeps(t *testing.T) {
@@ -509,7 +511,7 @@ workflow:
 				inputMsg = append(inputMsg, part)
 			}
 
-			msgs, res := p.ProcessBatch(context.Background(), inputMsg.ShallowCopy())
+			msgs, res := p.ProcessBatch(t.Context(), inputMsg.ShallowCopy())
 			if test.err != "" {
 				require.Error(t, res)
 				require.EqualError(t, res, test.err)
@@ -544,7 +546,7 @@ workflow:
 				assert.Equal(t, m.content, string(inputMsg.Get(i).AsBytes()))
 			}
 
-			ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+			ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 			defer done()
 			assert.NoError(t, p.Close(ctx))
 		})
@@ -703,7 +705,7 @@ workflow:
 				parts = append(parts, []byte(input))
 			}
 
-			msgs, res := p.ProcessBatch(context.Background(), message.QuickBatch(parts))
+			msgs, res := p.ProcessBatch(t.Context(), message.QuickBatch(parts))
 			if test.err != "" {
 				require.Error(t, res)
 				require.EqualError(t, res, test.err)
@@ -716,7 +718,7 @@ workflow:
 				assert.Equal(t, test.output, output)
 			}
 
-			ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+			ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 			defer done()
 			assert.NoError(t, p.Close(ctx))
 		})
@@ -786,7 +788,7 @@ workflow:
 						parts = append(parts, []byte(input))
 					}
 
-					msgs, res := p.ProcessBatch(context.Background(), message.QuickBatch(parts))
+					msgs, res := p.ProcessBatch(t.Context(), message.QuickBatch(parts))
 					require.NoError(t, res)
 					require.Len(t, msgs, 1)
 					var actual []string
@@ -801,7 +803,7 @@ workflow:
 		close(startChan)
 		wg.Wait()
 
-		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+		ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 		assert.NoError(t, p.Close(ctx))
 		done()
 	}
@@ -974,7 +976,7 @@ workflow:
 				parts = append(parts, []byte(input))
 			}
 
-			msgs, res := p.ProcessBatch(context.Background(), message.QuickBatch(parts))
+			msgs, res := p.ProcessBatch(t.Context(), message.QuickBatch(parts))
 			if test.err != "" {
 				require.Error(t, res)
 				require.EqualError(t, res, test.err)
@@ -987,7 +989,7 @@ workflow:
 				assert.Equal(t, test.output, output)
 			}
 
-			ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+			ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 			defer done()
 			assert.NoError(t, p.Close(ctx))
 		})
@@ -1028,11 +1030,11 @@ workflow:
 	strm, tracer, err := strmBuilder.BuildTraced()
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	go func() {
-		assert.NoError(t, strm.Run(tCtx))
+		_ = strm.Run(tCtx)
 	}()
 	require.NoError(t, inFunc(tCtx, service.NewMessage([]byte(`{"id":"hello world","content":"waddup"}`))))
 	require.NoError(t, strm.Stop(tCtx))

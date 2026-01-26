@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package integration
 
 import (
@@ -8,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // StreamBenchSend benchmarks the speed at which messages are sent over the
@@ -31,7 +33,7 @@ func StreamBenchSend(batchSize, parallelism int) StreamBenchDefinition {
 			set := map[string][]string{}
 			for j := 0; j < sends; j++ {
 				for i := 0; i < batchSize; i++ {
-					payload := fmt.Sprintf("hello world %v", j*sends+i)
+					payload := fmt.Sprintf("hello world %v", j*batchSize+i)
 					set[payload] = nil
 				}
 			}
@@ -66,7 +68,7 @@ func StreamBenchSend(batchSize, parallelism int) StreamBenchDefinition {
 			for j := 0; j < sends; j++ {
 				payloads := []string{}
 				for i := 0; i < batchSize; i++ {
-					payload := fmt.Sprintf("hello world %v", j*sends+i)
+					payload := fmt.Sprintf("hello world %v", j*batchSize+i)
 					payloads = append(payloads, payload)
 				}
 				batchChan <- payloads
@@ -97,9 +99,45 @@ func StreamBenchWrite(batchSize int) StreamBenchDefinition {
 			batch := make([]string, batchSize)
 			for j := 0; j < sends; j++ {
 				for i := 0; i < batchSize; i++ {
-					batch[i] = fmt.Sprintf(`{"content":"hello world","id":%v}`, j*sends+i)
+					batch[i] = fmt.Sprintf(`{"content":"hello world","id":%v}`, j*batchSize+i)
 				}
 				assert.NoError(b, sendBatch(env.ctx, b, tranChan, batch))
+			}
+		},
+	)
+}
+
+// StreamBenchReadSaturated benchmarks the speed at which messages are consumed
+// over the templated input, by first saturating the output with messages.
+func StreamBenchReadSaturated() StreamBenchDefinition {
+	return namedBench(
+		"read saturated messages",
+		func(b *testing.B, env *streamTestEnvironment) {
+			tranChan := make(chan message.Transaction)
+			input, output := initConnectors(b, tranChan, env)
+			b.Cleanup(func() {
+				closeConnectors(b, env, input, output)
+			})
+
+			// Batch size is just to speed up the test itself
+			batchSize := 20
+			sends := b.N / batchSize
+
+			set := map[string][]string{}
+			for j := 0; j < sends; j++ {
+				batch := make([]string, batchSize)
+				for i := 0; i < batchSize; i++ {
+					payload := fmt.Sprintf("hello world %v", j*batchSize+i)
+					set[payload] = nil
+					batch[i] = payload
+				}
+				assert.NoError(b, sendBatch(env.ctx, b, tranChan, batch))
+			}
+
+			b.ResetTimer()
+
+			for len(set) > 0 {
+				messagesInSet(b, true, true, receiveBatch(env.ctx, b, input.TransactionChan(), nil), set)
 			}
 		},
 	)

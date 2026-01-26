@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package config
 
 import (
@@ -14,11 +16,11 @@ import (
 	"github.com/Jeffail/gabs/v2"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 )
 
 const (
@@ -45,6 +47,9 @@ type Reader struct {
 
 	// The filesystem used for reading config files.
 	fs ifs.FS
+
+	// The function used for looking up environment variable interpolations.
+	envLookupFunc func(context.Context, string) (string, bool)
 
 	// Specs for various config types.
 	specFullConfig    docs.FieldSpecs
@@ -92,8 +97,11 @@ func NewReader(mainPath string, resourcePaths []string, opts ...OptFunc) *Reader
 		mainPath = filepath.Clean(mainPath)
 	}
 	r := &Reader{
-		testSuffix:         "_benthos_test",
-		fs:                 ifs.OS(),
+		testSuffix: "_benthos_test",
+		fs:         ifs.OS(),
+		envLookupFunc: func(ctx context.Context, s string) (string, bool) {
+			return os.LookupEnv(s)
+		},
 		lintConf:           docs.NewLintConfig(bundle.GlobalEnvironment),
 		mainPath:           mainPath,
 		resourcePaths:      resourcePaths,
@@ -107,7 +115,7 @@ func NewReader(mainPath string, resourcePaths []string, opts ...OptFunc) *Reader
 
 		specFullConfig:    Spec(),
 		specStreamOnly:    stream.Spec(),
-		specObservability: SpecWithoutStream(),
+		specObservability: SpecWithoutStream(Spec()),
 		specResources:     manager.Spec(),
 	}
 	for _, opt := range opts {
@@ -123,9 +131,10 @@ type OptFunc func(*Reader)
 
 // OptSetFullSpec overrides the default general config spec with the provided
 // one.
-func OptSetFullSpec(spec docs.FieldSpecs) OptFunc {
+func OptSetFullSpec(spec func() docs.FieldSpecs) OptFunc {
 	return func(r *Reader) {
-		r.specFullConfig = spec
+		r.specFullConfig = spec()
+		r.specObservability = SpecWithoutStream(spec())
 	}
 }
 
@@ -171,6 +180,13 @@ func OptUseFS(fs ifs.FS) OptFunc {
 	}
 }
 
+// OptUseEnvLookupFunc overrides the default environment variable lookup func.
+func OptUseEnvLookupFunc(fn func(context.Context, string) (string, bool)) OptFunc {
+	return func(r *Reader) {
+		r.envLookupFunc = fn
+	}
+}
+
 //------------------------------------------------------------------------------
 
 func (r *Reader) lintCtx() docs.LintContext {
@@ -178,8 +194,8 @@ func (r *Reader) lintCtx() docs.LintContext {
 }
 
 // Read a Benthos config from the files and options specified.
-func (r *Reader) Read() (conf Type, lints []string, err error) {
-	if conf, lints, err = r.readMain(r.mainPath); err != nil {
+func (r *Reader) Read() (conf Type, pConf *docs.ParsedConfig, lints []string, err error) {
+	if conf, pConf, lints, err = r.readMain(r.mainPath); err != nil {
 		return
 	}
 	r.configFileInfo = resInfoFromConfig(&conf.ResourceConfig)
@@ -265,9 +281,9 @@ func applyOverrides(specs docs.FieldSpecs, root *yaml.Node, overrides ...string)
 			return fmt.Errorf("invalid set expression '%v': expected foo=bar syntax", override)
 		}
 
-		valNode := yaml.Node{
-			Kind:  yaml.ScalarNode,
-			Value: value,
+		var valNode yaml.Node
+		if err := yaml.Unmarshal([]byte(value), &valNode); err != nil {
+			return fmt.Errorf("invalid set expression '%v': %w", override, err)
 		}
 		if err := specs.SetYAMLPath(bundle.GlobalEnvironment, root, &valNode, gabs.DotPathToSlice(path)...); err != nil {
 			return fmt.Errorf("failed to set config field override: %w", err)
@@ -276,7 +292,7 @@ func applyOverrides(specs docs.FieldSpecs, root *yaml.Node, overrides ...string)
 	return nil
 }
 
-func (r *Reader) readMain(mainPath string) (conf Type, lints []string, err error) {
+func (r *Reader) readMain(mainPath string) (conf Type, pConf *docs.ParsedConfig, lints []string, err error) {
 	defer func() {
 		if err != nil && mainPath != "" {
 			err = fmt.Errorf("%v: %w", mainPath, err)
@@ -288,7 +304,7 @@ func (r *Reader) readMain(mainPath string) (conf Type, lints []string, err error
 	if mainPath != "" {
 		var dLints []docs.Lint
 		var modTime time.Time
-		if confBytes, dLints, modTime, err = ReadFileEnvSwap(r.fs, mainPath, os.LookupEnv); err != nil {
+		if confBytes, dLints, modTime, err = r.ReadFileEnvSwap(context.TODO(), mainPath); err != nil {
 			return
 		}
 		for _, l := range dLints {
@@ -327,7 +343,6 @@ func (r *Reader) readMain(mainPath string) (conf Type, lints []string, err error
 	var rawSource any
 	_ = rawNode.Decode(&rawSource)
 
-	var pConf *docs.ParsedConfig
 	if pConf, err = confSpec.ParsedConfigFromAny(rawNode); err != nil {
 		return
 	}
@@ -345,7 +360,7 @@ func (r *Reader) readMain(mainPath string) (conf Type, lints []string, err error
 // the provided main update func, and apply changes to resources to the provided
 // manager as appropriate.
 func (r *Reader) TriggerMainUpdate(mgr bundle.NewManagement, strict bool, newPath string) error {
-	conf, lints, err := r.readMain(newPath)
+	conf, _, lints, err := r.readMain(newPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		if r.mainPath != newPath {
 			mgr.Logger().Error("Failed to read changed main config: %v", err)

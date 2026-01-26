@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -8,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestBrokerConfigs(t *testing.T) {
@@ -115,7 +117,7 @@ processors:
 			strm, err := builder.Build()
 			require.NoError(t, err)
 
-			tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+			tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 			defer done()
 
 			require.NoError(t, strm.Run(tCtx))

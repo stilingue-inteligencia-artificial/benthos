@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -7,13 +9,15 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
 )
 
 // Resources provides access to service-wide resources.
@@ -23,6 +27,18 @@ type Resources struct {
 
 func newResourcesFromManager(nm bundle.NewManagement) *Resources {
 	return &Resources{mgr: nm}
+}
+
+// NewInternalResources returns a resources pointer wrapped around an
+// instantiation of the internal manager package. This function is for internal
+// use only and intended as a scaffold for internal components migrating to the
+// new APIs.
+func NewInternalResources(mgr *manager.Type) *Resources {
+	// NOTE: I've implemented this around an explicit pointer to `manager.Type`
+	// rather than `bundle.NewManagement` just to make it even clearer to
+	// outsiders that you aren't meant to use this function unless you're able
+	// to access internal.
+	return newResourcesFromManager(mgr)
 }
 
 // MockResources returns an instantiation of a resources struct that provides
@@ -40,6 +56,16 @@ func MockResources(opts ...MockResourcesOptFn) *Resources {
 // MockResourcesOptFn provides a func based optional argument to MockResources.
 type MockResourcesOptFn func(*mock.Manager)
 
+// MockResourcesOptUseLogger sets the logger to be used by components
+// referencing these resources.
+func MockResourcesOptUseLogger(l *Logger) MockResourcesOptFn {
+	return func(m *mock.Manager) {
+		if l != nil {
+			m.L = l.m
+		}
+	}
+}
+
 // MockResourcesOptAddCache instantiates the resources type with a mock cache
 // with a given name. Cached items are held in memory.
 func MockResourcesOptAddCache(name string) MockResourcesOptFn {
@@ -55,6 +81,13 @@ func MockResourcesOptAddRateLimit(name string, fn func(context.Context) (time.Du
 	return func(m *mock.Manager) {
 		m.RateLimits[name] = mock.RateLimit(fn)
 	}
+}
+
+// EngineVersion returns the version stamp associated with the underlying
+// benthos engine. The version string is not guaranteed to match any particular
+// scheme.
+func (r *Resources) EngineVersion() string {
+	return r.mgr.EngineVersion()
 }
 
 // Label returns a label that identifies the component instantiation. This could
@@ -233,6 +266,46 @@ func (r *Resources) HasRateLimit(name string) bool {
 	return r.mgr.ProbeRateLimit(name)
 }
 
+// AccessProcessor attempts to access a processor resource by name. This action
+// can block if CRUD operations are being actively performed on the resource.
+func (r *Resources) AccessProcessor(ctx context.Context, name string, fn func(*ResourceProcessor)) error {
+	return r.mgr.AccessProcessor(ctx, name, func(p processor.V1) {
+		fn(newResourceProcessor(p))
+	})
+}
+
+// HasProcessor confirms whether a processor with a given name has been
+// registered as a resource. This method is useful during component
+// initialisation as it is defensive against ordering.
+func (r *Resources) HasProcessor(name string) bool {
+	return r.mgr.ProbeProcessor(name)
+}
+
+// GetGeneric queries the resources for a generic key value, potentially set by
+// another plugin or instantiation of this plugin.
+func (r *Resources) GetGeneric(key any) (any, bool) {
+	return r.mgr.GetGeneric(key)
+}
+
+// GetOrSetGeneric attempts to obtain an existing generic value for a given key
+// if present. Otherwise, it stores and returns the provided value. The loaded
+// result is true if the value was loaded, false if stored.
+func (r *Resources) GetOrSetGeneric(key, value any) (actual any, loaded bool) {
+	return r.mgr.GetOrSetGeneric(key, value)
+}
+
+// SetGeneric sets a generic key/value pair, which can be accessed by other
+// plugin implementations with access to the same resources.
+//
+// The provided key must be comparable and should not be of type string or any
+// other built-in type to avoid collisions between packages using resources.
+// Users of SetGeneric should define their own types for keys. To avoid
+// allocating when assigning to an any type, keys often have concrete type
+// struct{}.
+func (r *Resources) SetGeneric(key, value any) {
+	r.mgr.SetGeneric(key, value)
+}
+
 //------------------------------------------------------------------------------
 
 type resourcesUnwrapper struct {
@@ -246,4 +319,19 @@ func (r resourcesUnwrapper) Unwrap() bundle.NewManagement {
 // XUnwrapper is for internal use only, do not use this.
 func (r *Resources) XUnwrapper() any {
 	return resourcesUnwrapper{mgr: r.mgr}
+}
+
+//------------------------------------------------------------------------------
+
+// ManagedBatchOutput takes a BatchOutput implementation and wraps it within a
+// mechanism that automatically manages QOL details such as connect/reconnect
+// looping, max in flight, back pressure, and so on. This is similar to how an
+// output would be executed within a standard Benthos pipeline.
+func (r *Resources) ManagedBatchOutput(typeName string, maxInFlight int, b BatchOutput) (*OwnedOutput, error) {
+	w := newAirGapBatchWriter(r.mgr, b)
+	o, err := output.NewAsyncWriter(typeName, maxInFlight, w, r.mgr)
+	if err != nil {
+		return nil, err
+	}
+	return newOwnedOutput(o)
 }

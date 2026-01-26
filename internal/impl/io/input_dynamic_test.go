@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
@@ -12,15 +14,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	bmock "github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	bmock "github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestDynamicInputAPI(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	gMux := mux.NewRouter()
@@ -35,6 +37,8 @@ func TestDynamicInputAPI(t *testing.T) {
 
 	i, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	i.TriggerStartConsuming()
 
 	req := httptest.NewRequest(http.MethodGet, "/inputs", http.NoBody)
 	res := httptest.NewRecorder()
@@ -89,7 +93,7 @@ generate:
 }
 
 func TestDynamicInputAPIStopped(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	gMux := mux.NewRouter()
@@ -104,6 +108,8 @@ func TestDynamicInputAPIStopped(t *testing.T) {
 
 	i, err := mgr.NewInput(conf)
 	require.NoError(t, err)
+
+	i.TriggerStartConsuming()
 
 	fooConf := `
 generate:
@@ -191,7 +197,7 @@ processors:
 			require.NoError(t, builder.AddInputYAML(test.config))
 			require.NoError(t, builder.SetLoggerYAML(`level: none`))
 
-			tCtx, done := context.WithTimeout(context.Background(), time.Minute)
+			tCtx, done := context.WithTimeout(t.Context(), time.Minute)
 			defer done()
 
 			outputMsgs := map[string]struct{}{}

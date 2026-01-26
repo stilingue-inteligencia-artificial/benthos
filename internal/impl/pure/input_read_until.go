@@ -1,9 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -11,12 +14,13 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -30,7 +34,7 @@ func readUntilInputSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Stable().
 		Categories("Utility").
-		Summary("Reads messages from a child input until a consumed message passes a [Bloblang query](/docs/guides/bloblang/about/), at which point the input closes. It is also possible to configure a timeout after which the input is closed if no new messages arrive in that period.").
+		Summary("Reads messages from a child input until a consumed message passes a xref:guides:bloblang/about.adoc[Bloblang query], at which point the input closes. It is also possible to configure a timeout after which the input is closed if no new messages arrive in that period.").
 		Description(`
 Messages are read continuously while the query check returns false, when the query returns true the message that triggered the check is sent out and the input is closed. Use this to define inputs where the stream should end once a certain message appears.
 
@@ -38,12 +42,12 @@ If the idle timeout is configured, the input will be closed if no new messages a
 
 Sometimes inputs close themselves. For example, when the `+"`file`"+` input type reaches the end of a file it will shut down. By default this type will also shut down. If you wish for the input type to be restarted every time it shuts down until the query check is met then set `+"`restart_input` to `true`."+`
 
-### Metadata
+== Metadata
 
 A metadata key `+"`benthos_read_until` containing the value `final`"+` is added to the first part of the message that triggers the input to stop.`).
 		Example(
 			"Consume N Messages",
-			"A common reason to use this input is to consume only N messages from an input and then stop. This can easily be done with the [`count` function](/docs/guides/bloblang/functions/#count):",
+			"A common reason to use this input is to consume only N messages from an input and then stop. This can easily be done with the xref:guides:bloblang/functions.adoc#count[`count` function]:",
 			`
 # Only read 100 messages, and then exit.
 input:
@@ -74,7 +78,7 @@ input:
 		service.NewInputField(ruiFieldInput).
 			Description("The child input to consume from."),
 		service.NewBloblangField(ruiFieldCheck).
-			Description("A [Bloblang query](/docs/guides/bloblang/about/) that should return a boolean value indicating whether the input should now be closed.").
+			Description("A xref:guides:bloblang/about.adoc[Bloblang query] that should return a boolean value indicating whether the input should now be closed.").
 			Examples(
 				`this.type == "foo"`,
 				`count("messages") >= 100`,
@@ -91,7 +95,7 @@ input:
 }
 
 func init() {
-	err := service.RegisterBatchInput("read_until", readUntilInputSpec(),
+	service.MustRegisterBatchInput("read_until", readUntilInputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 			i, err := newReadUntilInputFromParsed(conf, mgr)
 			if err != nil {
@@ -99,9 +103,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalInput(i), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type readUntilInput struct {
@@ -117,7 +118,8 @@ type readUntilInput struct {
 
 	transactions chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newReadUntilInputFromParsed(conf *service.ParsedConfig, res *service.Resources) (input.Streamed, error) {
@@ -174,8 +176,6 @@ func newReadUntilInputFromParsed(conf *service.ParsedConfig, res *service.Resour
 
 		shutSig: shutdown.NewSignaller(),
 	}
-
-	go rdr.loop()
 	return rdr, nil
 }
 
@@ -227,6 +227,8 @@ runLoop:
 		} else {
 			wrapped = *wrappedP
 		}
+
+		wrapped.TriggerStartConsuming() // This is safe to call multiple times
 
 		var tran message.Transaction
 		{
@@ -296,21 +298,32 @@ runLoop:
 	}
 }
 
-// TransactionChan returns a transactions channel for consuming messages from
-// this input type.
 func (r *readUntilInput) TransactionChan() <-chan message.Transaction {
 	return r.transactions
 }
 
-// Connected returns a boolean indicating whether this input is currently
-// connected to its target.
-func (r *readUntilInput) Connected() bool {
+func (r *readUntilInput) TriggerStartConsuming() {
+	r.startOnce.Do(func() {
+		go r.loop()
+	})
+}
+
+func (r *readUntilInput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
 	wrappedP := r.wrappedInputLocked.Load()
 	if wrappedP != nil {
 		i := *wrappedP
-		return i.Connected()
+		return i.ConnectionTest(ctx)
 	}
-	return false
+	return nil
+}
+
+func (r *readUntilInput) ConnectionStatus() component.ConnectionStatuses {
+	wrappedP := r.wrappedInputLocked.Load()
+	if wrappedP != nil {
+		i := *wrappedP
+		return i.ConnectionStatus()
+	}
+	return nil
 }
 
 func (r *readUntilInput) TriggerStopConsuming() {

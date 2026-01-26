@@ -1,8 +1,10 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package httpclient
 
 import (
 	"bytes"
-	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime"
@@ -20,8 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func clientConfig(t testing.TB, confStr string, args ...any) OldConfig {
@@ -52,9 +53,9 @@ retries: 3
 
 	h, err := NewClientFromOldConfig(conf, service.MockResources())
 	require.NoError(t, err)
-	defer h.Close(context.Background())
+	defer h.Close(t.Context())
 
-	_, err = h.Send(context.Background(), service.MessageBatch{service.NewMessage([]byte("test"))})
+	_, err = h.Send(t.Context(), service.MessageBatch{service.NewMessage([]byte("test"))})
 	assert.Error(t, err)
 	assert.Equal(t, uint32(4), atomic.LoadUint32(&reqCount))
 }
@@ -70,24 +71,24 @@ retries: 3
 	h, err := NewClientFromOldConfig(conf, service.MockResources())
 	require.NoError(t, err)
 
-	_, err = h.Send(context.Background(), service.MessageBatch{service.NewMessage([]byte("test"))})
+	_, err = h.Send(t.Context(), service.MessageBatch{service.NewMessage([]byte("test"))})
 	assert.Error(t, err)
 }
 
 func TestHTTPClientSendBasic(t *testing.T) {
 	nTestLoops := 1000
 
-	resultChan := make(chan message.Batch, 1)
+	resultChan := make(chan string, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		msg := message.QuickBatch(nil)
+		var s string
 		defer func() {
-			resultChan <- msg
+			resultChan <- s
 		}()
 
 		b, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
 
-		msg = append(msg, message.NewPart(b))
+		s = string(b)
 	}))
 	defer ts.Close()
 
@@ -104,13 +105,12 @@ url: %v
 			service.NewMessage([]byte(testStr)),
 		}
 
-		_, err = h.Send(context.Background(), testMsg)
+		_, err = h.Send(t.Context(), testMsg)
 		require.NoError(t, err)
 
 		select {
 		case resMsg := <-resultChan:
-			require.Equal(t, 1, resMsg.Len())
-			assert.Equal(t, testStr, string(resMsg.Get(0).AsBytes()))
+			assert.Equal(t, testStr, resMsg)
 		case <-time.After(time.Second):
 			t.Fatal("Action timed out")
 		}
@@ -136,7 +136,7 @@ url: %v
 
 	testMsg := service.MessageBatch{service.NewMessage([]byte("hello world"))}
 
-	res, err := h.Send(context.Background(), testMsg)
+	res, err := h.Send(t.Context(), testMsg)
 	require.NoError(t, err)
 
 	require.Len(t, res, 1)
@@ -163,7 +163,7 @@ drop_on: [ 400 ]
 
 	testMsg := service.MessageBatch{service.NewMessage([]byte(`{"bar":"baz"}`))}
 
-	_, err = h.Send(context.Background(), testMsg)
+	_, err = h.Send(t.Context(), testMsg)
 	require.Error(t, err)
 }
 
@@ -185,7 +185,7 @@ successful_on: [ 400 ]
 	require.NoError(t, err)
 
 	testMsg := service.MessageBatch{service.NewMessage([]byte(`{"bar":"baz"}`))}
-	resMsg, err := h.Send(context.Background(), testMsg)
+	resMsg, err := h.Send(t.Context(), testMsg)
 	require.NoError(t, err)
 
 	mBytes, err := resMsg[0].AsBytes()
@@ -197,22 +197,21 @@ successful_on: [ 400 ]
 func TestHTTPClientSendInterpolate(t *testing.T) {
 	nTestLoops := 1000
 
-	resultChan := make(chan message.Batch, 1)
+	resultChan := make(chan string, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/firstvar", r.URL.Path)
 		assert.Equal(t, "hdr-secondvar", r.Header.Get("dynamic"))
 		assert.Equal(t, "foo", r.Header.Get("static"))
 		assert.Equal(t, "simpleHost.com", r.Host)
 
-		msg := message.QuickBatch(nil)
+		var s string
 		defer func() {
-			resultChan <- msg
+			resultChan <- s
 		}()
 
 		b, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
-
-		msg = append(msg, message.NewPart(b))
+		s = string(b)
 	}))
 	defer ts.Close()
 
@@ -231,13 +230,12 @@ headers:
 		testStr := fmt.Sprintf(`{"test":%v,"foo":{"bar":"firstvar","baz":"secondvar"}}`, i)
 		testMsg := service.MessageBatch{service.NewMessage([]byte(testStr))}
 
-		_, err = h.Send(context.Background(), testMsg)
+		_, err = h.Send(t.Context(), testMsg)
 		require.NoError(t, err)
 
 		select {
 		case resMsg := <-resultChan:
-			require.Equal(t, 1, resMsg.Len())
-			assert.Equal(t, testStr, string(resMsg.Get(0).AsBytes()))
+			assert.Equal(t, testStr, resMsg)
 		case <-time.After(time.Second):
 			t.Fatal("Action timed out")
 		}
@@ -247,11 +245,11 @@ headers:
 func TestHTTPClientSendMultipart(t *testing.T) {
 	nTestLoops := 1000
 
-	resultChan := make(chan message.Batch, 1)
+	resultChan := make(chan []string, 1)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		msg := message.QuickBatch(nil)
+		var batch []string
 		defer func() {
-			resultChan <- msg
+			resultChan <- batch
 		}()
 
 		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -269,13 +267,13 @@ func TestHTTPClientSendMultipart(t *testing.T) {
 				msgBytes, err := io.ReadAll(p)
 				require.NoError(t, err)
 
-				msg = append(msg, message.NewPart(msgBytes))
+				batch = append(batch, string(msgBytes))
 			}
 		} else {
 			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
 
-			msg = append(msg, message.NewPart(b))
+			batch = append(batch, string(b))
 		}
 	}))
 	defer ts.Close()
@@ -294,14 +292,14 @@ url: %v
 			service.NewMessage([]byte(testStr + "PART-B")),
 		}
 
-		_, err = h.Send(context.Background(), testMsg)
+		_, err = h.Send(t.Context(), testMsg)
 		require.NoError(t, err)
 
 		select {
 		case resMsg := <-resultChan:
-			assert.Equal(t, 2, resMsg.Len())
-			assert.Equal(t, testStr+"PART-A", string(resMsg.Get(0).AsBytes()))
-			assert.Equal(t, testStr+"PART-B", string(resMsg.Get(1).AsBytes()))
+			assert.Len(t, resMsg, 2)
+			assert.Equal(t, testStr+"PART-A", resMsg[0])
+			assert.Equal(t, testStr+"PART-B", resMsg[1])
 		case <-time.After(time.Second):
 			t.Fatal("Action timed out")
 		}
@@ -330,7 +328,7 @@ url: %v
 
 	for i := 0; i < nTestLoops; i++ {
 		testStr := fmt.Sprintf("test%v", j)
-		resMsg, err := h.Send(context.Background(), nil)
+		resMsg, err := h.Send(t.Context(), nil)
 		require.NoError(t, err)
 
 		assert.Len(t, resMsg, 1)
@@ -340,7 +338,7 @@ url: %v
 		assert.Equal(t, testStr+"PART-A", string(mBytes))
 
 		v, _ := resMsg[0].MetaGet("foo-bar")
-		assert.Equal(t, "", v)
+		assert.Empty(t, v)
 		v, _ = resMsg[0].MetaGet("http_status_code")
 		assert.Equal(t, "201", v)
 	}
@@ -379,7 +377,7 @@ metadata:
 	part.MetaSetMut("bar_a", "bar a value")
 	part.MetaSetMut("bar_b", "bar b value")
 
-	resMsg, err := h.Send(context.Background(), sendMsg)
+	resMsg, err := h.Send(t.Context(), sendMsg)
 	require.NoError(t, err)
 
 	assert.Len(t, resMsg, 1)
@@ -397,6 +395,10 @@ bar_b:
 
 func TestHTTPClientReceiveHeadersWithMetadataFiltering(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("cookies") {
+			w.Header().Add("Set-Cookie", "foo=bar")
+			w.Header().Add("Set-Cookie", "fizz=buzz")
+		}
 		w.Header().Set("foobar", "baz")
 		w.Header().Set("extra", "val")
 		w.WriteHeader(http.StatusCreated)
@@ -406,6 +408,7 @@ func TestHTTPClientReceiveHeadersWithMetadataFiltering(t *testing.T) {
 	for _, tt := range []struct {
 		name            string
 		noExtraMetadata bool
+		setCookies      bool
 		includePrefixes []string
 		includePatterns []string
 	}{
@@ -421,6 +424,11 @@ func TestHTTPClientReceiveHeadersWithMetadataFiltering(t *testing.T) {
 			name:            "include_patterns only",
 			includePatterns: []string{".*bar"},
 		},
+		{
+			name:            "multi-value headers",
+			setCookies:      true,
+			includePatterns: []string{".*"},
+		},
 	} {
 		if tt.includePrefixes == nil {
 			tt.includePrefixes = []string{}
@@ -428,19 +436,24 @@ func TestHTTPClientReceiveHeadersWithMetadataFiltering(t *testing.T) {
 		if tt.includePatterns == nil {
 			tt.includePatterns = []string{}
 		}
+
+		url := ts.URL
+		if tt.setCookies {
+			url += "?cookies=true"
+		}
 		conf := clientConfig(t, `
 url: %v
 extract_headers:
   include_prefixes: %v
   include_patterns: %v
-`, ts.URL, gabs.Wrap(tt.includePrefixes).String(), gabs.Wrap(tt.includePatterns).String())
+`, url, gabs.Wrap(tt.includePrefixes).String(), gabs.Wrap(tt.includePatterns).String())
 
 		h, err := NewClientFromOldConfig(conf, service.MockResources())
 		if err != nil {
 			t.Fatalf("%s: %s", tt.name, err)
 		}
 
-		resMsg, err := h.Send(context.Background(), nil)
+		resMsg, err := h.Send(t.Context(), nil)
 		if err != nil {
 			t.Fatalf("%s: %s", tt.name, err)
 		}
@@ -460,6 +473,15 @@ extract_headers:
 			v, _ := resMsg[0].MetaGet("foobar")
 			if exp, act := "baz", v; exp != act {
 				t.Errorf("%s: wrong metadata value: %v != %v", tt.name, act, exp)
+			}
+			if tt.setCookies {
+				v, _ := resMsg[0].MetaGetMut("set-cookie")
+				assert.IsType(t, []any{}, v)
+				act, err := json.Marshal(v)
+				require.NoError(t, err)
+				if exp := `["foo=bar","fizz=buzz"]`; exp != string(act) {
+					t.Errorf("%s: wrong metadata value: %v != %v", tt.name, act, exp)
+				}
 			}
 		}
 	}
@@ -510,7 +532,7 @@ url: %v
 
 	for i := 0; i < nTestLoops; i++ {
 		testStr := fmt.Sprintf("test%v", j)
-		resMsg, err := h.Send(context.Background(), nil)
+		resMsg, err := h.Send(t.Context(), nil)
 		require.NoError(t, err)
 
 		assert.Len(t, resMsg, 2)
@@ -524,13 +546,13 @@ url: %v
 		assert.Equal(t, testStr+"PART-B", string(mBytes))
 
 		v, _ := resMsg[0].MetaGet("foo-bar")
-		assert.Equal(t, "", v)
+		assert.Empty(t, v)
 
 		v, _ = resMsg[0].MetaGet("http_status_code")
 		assert.Equal(t, "201", v)
 
 		v, _ = resMsg[1].MetaGet("foo-bar")
-		assert.Equal(t, "", v)
+		assert.Empty(t, v)
 
 		v, _ = resMsg[1].MetaGet("http_status_code")
 		assert.Equal(t, "201", v)
@@ -553,7 +575,7 @@ retries: 0
 	h, err := NewClientFromOldConfig(conf, service.MockResources())
 	require.NoError(t, err)
 
-	_, err = h.Send(context.Background(), service.MessageBatch{
+	_, err = h.Send(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte("hello world")),
 	})
 	require.Error(t, err)
@@ -581,7 +603,7 @@ proxy_url: %v
 	h, err := NewClientFromOldConfig(conf, service.MockResources())
 	require.NoError(t, err)
 
-	resBatch, err := h.Send(context.Background(), service.MessageBatch{
+	resBatch, err := h.Send(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte("hello world")),
 	})
 	require.NoError(t, err)
@@ -617,7 +639,7 @@ proxy_url: %v
 	h, err := NewClientFromOldConfig(conf, service.MockResources())
 	require.NoError(t, err)
 
-	resBatch, err := h.Send(context.Background(), service.MessageBatch{
+	resBatch, err := h.Send(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte("hello world")),
 	})
 	require.NoError(t, err)
@@ -658,7 +680,7 @@ oauth2:
 	h, err := NewClientFromOldConfig(conf, service.MockResources())
 	require.NoError(t, err)
 
-	resBatch, err := h.Send(context.Background(), service.MessageBatch{
+	resBatch, err := h.Send(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte("hello world")),
 	})
 	require.NoError(t, err)
@@ -667,6 +689,91 @@ oauth2:
 	mBytes, err := resBatch[0].AsBytes()
 	require.NoError(t, err)
 	assert.Equal(t, "HELLO WORLD", string(mBytes))
+}
+
+func TestHTTPClientOAuth2ConfWithRefreshToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer footoken", r.Header.Get("Authorization"))
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		_, _ = w.Write(bytes.ToUpper(b))
+	}))
+	defer ts.Close()
+
+	tsOAuth2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Basic Zm9va2V5OmZvb3NlY3JldA==", r.Header.Get("Authorization"))
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Equal(t, "grant_type=refresh_token&refresh_token=foorefresh", string(b))
+		_, _ = w.Write([]byte(`access_token=footoken&token_type=Bearer`))
+	}))
+	defer tsOAuth2.Close()
+
+	conf := clientConfig(t, `
+url: %v
+oauth2:
+  enabled: true
+  token_url: %v
+  client_key: fookey
+  client_secret: foosecret
+  endpoint_params:
+    grant_type:
+      - refresh_token
+    refresh_token:
+      - foorefresh
+`, ts.URL+"/testpost", tsOAuth2.URL)
+
+	h, err := NewClientFromOldConfig(conf, service.MockResources())
+	require.NoError(t, err)
+
+	resBatch, err := h.Send(t.Context(), service.MessageBatch{
+		service.NewMessage([]byte("hello world")),
+	})
+	require.NoError(t, err)
+	require.Len(t, resBatch, 1)
+
+	mBytes, err := resBatch[0].AsBytes()
+	require.NoError(t, err)
+	assert.Equal(t, "HELLO WORLD", string(mBytes))
+}
+
+func TestHTTPClientOAuth2ConfWithMissingRefreshToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer footoken", r.Header.Get("Authorization"))
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		_, _ = w.Write(bytes.ToUpper(b))
+	}))
+	defer ts.Close()
+
+	tsOAuth2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Basic Zm9va2V5OmZvb3NlY3JldA==", r.Header.Get("Authorization"))
+		b, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Equal(t, "grant_type=refresh_token&refresh_token=foorefresh", string(b))
+		_, _ = w.Write([]byte(`access_token=footoken&token_type=Bearer`))
+	}))
+	defer tsOAuth2.Close()
+
+	conf := clientConfig(t, `
+url: %v
+oauth2:
+  enabled: true
+  token_url: %v
+  client_key: fookey
+  client_secret: foosecret
+  endpoint_params:
+    grant_type:
+      - refresh_token
+`, ts.URL+"/testpost", tsOAuth2.URL)
+
+	h, err := NewClientFromOldConfig(conf, service.MockResources())
+	require.NoError(t, err)
+
+	_, err = h.Send(t.Context(), service.MessageBatch{
+		service.NewMessage([]byte("hello world")),
+	})
+	require.Error(t, err)
 }
 
 func TestHTTPClientOAuth2AndTLSConf(t *testing.T) {
@@ -702,7 +809,7 @@ tls:
 	h, err := NewClientFromOldConfig(conf, service.MockResources())
 	require.NoError(t, err)
 
-	resBatch, err := h.Send(context.Background(), service.MessageBatch{
+	resBatch, err := h.Send(t.Context(), service.MessageBatch{
 		service.NewMessage([]byte("hello world")),
 	})
 	require.NoError(t, err)
@@ -711,4 +818,92 @@ tls:
 	mBytes, err := resBatch[0].AsBytes()
 	require.NoError(t, err)
 	assert.Equal(t, "HELLO WORLD", string(mBytes))
+}
+
+func TestHTTPClientNoFollowRedirects(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://example.com", http.StatusMovedPermanently)
+	}))
+	defer ts.Close()
+
+	conf := clientConfig(t, `
+url: %v
+follow_redirects: false
+extract_headers:
+  include_patterns:
+  - '^location$'
+`, ts.URL)
+
+	h, err := NewClientFromOldConfig(conf, service.MockResources())
+	require.NoError(t, err)
+
+	resBatch, err := h.Send(t.Context(), service.MessageBatch{
+		service.NewMessage([]byte("hello world")),
+	})
+	require.NoError(t, err)
+	require.Len(t, resBatch, 1)
+
+	status, ok := resBatch[0].MetaGet("http_status_code")
+	require.True(t, ok)
+	require.Equal(t, "301", status)
+
+	location, ok := resBatch[0].MetaGet("location")
+	require.True(t, ok)
+	require.Equal(t, "https://example.com", location)
+}
+
+func TestHTTPClientDisableHTTP2(t *testing.T) {
+	tests := []struct {
+		name         string
+		disableHTTP2 bool
+		expProtocol  string
+	}{
+		{
+			name:        "http2 enabled",
+			expProtocol: "HTTP/2.0",
+		},
+		{
+			name:         "http2 disabled",
+			disableHTTP2: true,
+			expProtocol:  "HTTP/1.1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, test.expProtocol, r.Proto)
+				b, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				_, _ = w.Write(b)
+			}))
+			defer ts.Close()
+
+			ts.EnableHTTP2 = true
+
+			ts.StartTLS()
+
+			conf := clientConfig(t, `
+url: %s
+disable_http2: %t
+tls:
+  enabled: true
+  skip_cert_verify: true
+`, ts.URL, test.disableHTTP2)
+
+			h, err := NewClientFromOldConfig(conf, service.MockResources())
+			require.NoError(t, err)
+
+			dummyMsg := "hello world"
+			resBatch, err := h.Send(t.Context(), service.MessageBatch{
+				service.NewMessage([]byte(dummyMsg)),
+			})
+			require.NoError(t, err)
+			require.Len(t, resBatch, 1)
+
+			mBytes, err := resBatch[0].AsBytes()
+			require.NoError(t, err)
+			assert.Equal(t, dummyMsg, string(mBytes))
+		})
+	}
 }

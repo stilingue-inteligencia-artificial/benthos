@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package message
 
 import (
@@ -13,7 +15,7 @@ func TestPartWithContext(t *testing.T) {
 
 	type testKey string
 
-	ctx := context.WithValue(context.Background(), testKey("foo"), "bar")
+	ctx := context.WithValue(t.Context(), testKey("foo"), "bar")
 	p2 := WithContext(ctx, p1)
 
 	if exp, act := false, p2.IsEmpty(); exp != act {

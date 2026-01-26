@@ -1,12 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bundle
 
 import (
 	"fmt"
 	"sort"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 // AllProcessors is a set containing every single processor that has been
@@ -97,4 +99,39 @@ func (s *ProcessorSet) DocsFor(name string) (docs.ComponentSpec, bool) {
 		return docs.ComponentSpec{}, false
 	}
 	return c.spec, true
+}
+
+// Without creates a clone of the set excluding a variadic list of components.
+func (s *ProcessorSet) Without(names ...string) *ProcessorSet {
+	newSet := &ProcessorSet{
+		specs: map[string]processorSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			continue
+		}
+		newSet.specs[k] = v
+	}
+	return newSet
+}
+
+// With creates a clone of the set including a variadic list of components.
+func (s *ProcessorSet) With(names ...string) *ProcessorSet {
+	newSet := &ProcessorSet{
+		specs: map[string]processorSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			newSet.specs[k] = v
+		}
+	}
+	return newSet
 }

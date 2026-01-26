@@ -1,11 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // Processor is a Benthos processor implementation that works against single
@@ -18,10 +20,10 @@ type Processor interface {
 	// When an error is returned the input message will continue down the
 	// pipeline but will be marked with the error with *message.SetError, and
 	// metrics and logs will be emitted. The failed message can then be handled
-	// with the patterns outlined in https://www.benthos.dev/docs/configuration/error_handling.
+	// with the patterns outlined in https://docs.redpanda.com/redpanda-connect/configuration/error_handling.
 	//
 	// The Message types returned MUST be derived from the provided message, and
-	// CANNOT be custom implementations of Message. In order to copy the
+	// CANNOT be custom instantiations of Message. In order to copy the
 	// provided message use the Copy method.
 	Process(context.Context, *Message) (MessageBatch, error)
 
@@ -53,7 +55,7 @@ type BatchProcessor interface {
 	// with a nil error.
 	//
 	// The Message types returned MUST be derived from the provided messages,
-	// and CANNOT be custom implementations of Message. In order to copy the
+	// and CANNOT be custom instantiations of Message. In order to copy the
 	// provided messages use the Copy method.
 	ProcessBatch(context.Context, MessageBatch) ([]MessageBatch, error)
 
@@ -231,4 +233,65 @@ func (w processorUnwrapper) Unwrap() processor.V1 {
 // XUnwrapper is for internal use only, do not use this.
 func (o *OwnedProcessor) XUnwrapper() any {
 	return processorUnwrapper{p: o.p}
+}
+
+//------------------------------------------------------------------------------
+
+// ResourceProcessor provides access to a processor that is a resource.
+type ResourceProcessor struct {
+	p processor.V1
+}
+
+func newResourceProcessor(p processor.V1) *ResourceProcessor {
+	return &ResourceProcessor{p}
+}
+
+// Process a single message, returns either a batch of zero or more resulting
+// messages or an error if the message could not be processed.
+func (r *ResourceProcessor) Process(ctx context.Context, msg *Message) (MessageBatch, error) {
+	outMsg := message.Batch{msg.part}
+
+	iMsgs, res := r.p.ProcessBatch(ctx, outMsg)
+	if res != nil {
+		return nil, res
+	}
+
+	var b MessageBatch
+	for _, iMsg := range iMsgs {
+		_ = iMsg.Iter(func(i int, part *message.Part) error {
+			b = append(b, NewInternalMessage(part))
+			return nil
+		})
+	}
+	return b, nil
+}
+
+// ProcessBatch attempts to process a batch of messages, returns zero or more
+// batches of resulting messages, or an error if the context is cancelled during
+// execution.
+//
+// However, for general processing errors unrelated to context cancellation the
+// error is marked against individual messages with the `SetError` method and a
+// nil error is returned by this method.
+func (r *ResourceProcessor) ProcessBatch(ctx context.Context, batch MessageBatch) ([]MessageBatch, error) {
+	outMsg := make(message.Batch, len(batch))
+	for i, msg := range batch {
+		outMsg[i] = msg.part
+	}
+
+	iMsgs, res := r.p.ProcessBatch(ctx, outMsg)
+	if res != nil {
+		return nil, res
+	}
+
+	var batches []MessageBatch
+	for _, iMsg := range iMsgs {
+		var b MessageBatch
+		_ = iMsg.Iter(func(i int, part *message.Part) error {
+			b = append(b, NewInternalMessage(part))
+			return nil
+		})
+		batches = append(batches, b)
+	}
+	return batches, nil
 }

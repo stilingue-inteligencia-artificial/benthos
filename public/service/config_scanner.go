@@ -1,12 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/scanner"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 // NewScannerField defines a new scanner field, it is then possible to extract

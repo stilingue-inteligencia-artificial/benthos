@@ -1,8 +1,10 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package api
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/httpserver"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/httpserver"
 )
 
 const (
@@ -28,7 +30,7 @@ type Config struct {
 	BasicAuth      httpserver.BasicAuthConfig `json:"basic_auth" yaml:"basic_auth"`
 }
 
-// NewConfig creates a new API config with default values.
+// NewConfig creates an API configuration struct fully populated with default values.
 func NewConfig() Config {
 	return Config{
 		Address:        "0.0.0.0:4195",
@@ -42,6 +44,7 @@ func NewConfig() Config {
 	}
 }
 
+// FromParsed extracts the Benthos API fields from the config and returns a Benthos API config.
 func FromParsed(pConf *docs.ParsedConfig) (conf Config, err error) {
 	if conf.Address, err = pConf.FieldString(fieldAddress); err != nil {
 		return

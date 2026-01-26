@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -10,7 +12,7 @@ import (
 // input field.
 func NewInputMaxInFlightField() *ConfigField {
 	return NewIntField("max_in_flight").
-		Description("Optionally sets a limit on the number of messages that can be flowing through a Benthos stream pending acknowledgment from the input at any given time. Once a message has been either acknowledged or rejected (nacked) it is no longer considered pending. If the input produces logical batches then each batch is considered a single count against the maximum. **WARNING**: Batching policies at the output level will stall if this field limits the number of messages below the batching threshold. Zero (default) or lower implies no limit.").
+		Description("Optionally sets a limit on the number of messages that can be flowing through a Redpanda Connect stream pending acknowledgment from the input at any given time. Once a message has been either acknowledged or rejected (nacked) it is no longer considered pending. If the input produces logical batches then each batch is considered a single count against the maximum. **WARNING**: Batching policies at the output level will stall if this field limits the number of messages below the batching threshold. Zero (default) or lower implies no limit.").
 		Default(0).
 		Advanced()
 }
@@ -33,6 +35,14 @@ func InputWithMaxInFlight(n int, i Input) Input {
 type maxInFlight struct {
 	i       Input
 	ackSema *semaphore.Weighted
+}
+
+func (m *maxInFlight) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	t, ok := m.i.(ConnectionTestable)
+	if !ok {
+		return ConnectionTestNotSupported().AsList()
+	}
+	return t.ConnectionTest(ctx)
 }
 
 func (m *maxInFlight) Connect(ctx context.Context) error {
@@ -78,6 +88,14 @@ func InputBatchedWithMaxInFlight(n int, i BatchInput) BatchInput {
 type maxInFlightBatched struct {
 	i       BatchInput
 	ackSema *semaphore.Weighted
+}
+
+func (m *maxInFlightBatched) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	t, ok := m.i.(ConnectionTestable)
+	if !ok {
+		return ConnectionTestNotSupported().AsList()
+	}
+	return t.ConnectionTest(ctx)
 }
 
 func (m *maxInFlightBatched) Connect(ctx context.Context) error {

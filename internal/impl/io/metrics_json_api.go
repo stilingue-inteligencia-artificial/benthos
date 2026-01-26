@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -6,12 +8,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterMetricsExporter("json_api", service.NewConfigSpec().
+	service.MustRegisterMetricsExporter("json_api", service.NewConfigSpec().
 		Stable().
 		Summary(`Serves metrics as JSON object with the service wide HTTP service at the endpoints `+"`/stats` and `/metrics`"+`.`).
 		Description(`This metrics type is useful for debugging as it provides a human readable format that you can parse with tools such as `+"`jq`"+``).
@@ -19,9 +21,6 @@ func init() {
 		func(conf *service.ParsedConfig, log *service.Logger) (service.MetricsExporter, error) {
 			return newJSONAPI(log)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------

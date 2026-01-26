@@ -1,12 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"math"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/value"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 func registerIntMethod(name, longName, exampleIn, exampleOut string, method func(input any) (any, error)) {
@@ -26,13 +28,13 @@ root.d = this.d.$NAME().catch(0)
 		exampleOneIO[1] = `{"a":12,"b":12,"c":12,"d":0}`
 	}
 
-	if err := bloblang.RegisterMethodV2(name,
+	bloblang.MustRegisterMethodV2(name,
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryNumbers).
 			Description(replacer.Replace(`
 Converts a numerical type into a $LONGNAME, this is for advanced use cases where a specific data type is needed for a given component (such as the ClickHouse SQL driver).
 
-If the value is a string then an attempt will be made to parse it as a $LONGNAME. If the target value exceeds the capacity of an integer or contains decimal values then this method will throw an error. In order to convert a floating point number containing decimals first use `+"[`.round()`](#round)"+` on the value. Please refer to the [`+"`strconv.ParseInt`"+` documentation](https://pkg.go.dev/strconv#ParseInt) for details regarding the supported formats.`)).
+If the value is a string then an attempt will be made to parse it as a $LONGNAME. If the target value exceeds the capacity of an integer or contains decimal values then this method will throw an error. In order to convert a floating point number containing decimals first use <<round, `+"`.round()`"+`>> on the value. Please refer to the https://pkg.go.dev/strconv#ParseInt[`+"`strconv.ParseInt`"+` documentation] for details regarding the supported formats.`)).
 			Example("", exampleOneBody, exampleOneIO).
 			Example("", replacer.Replace(`
 root = this.$NAME()
@@ -41,9 +43,7 @@ root = this.$NAME()
 			),
 		func(args *bloblang.ParsedParams) (bloblang.Method, error) {
 			return method, nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 }
 
 func init() {
@@ -103,13 +103,13 @@ func init() {
 			return value.IToUint8(input)
 		})
 
-	if err := bloblang.RegisterMethodV2("float64",
+	bloblang.MustRegisterMethodV2("float64",
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryNumbers).
 			Description(`
 Converts a numerical type into a 64-bit floating point number, this is for advanced use cases where a specific data type is needed for a given component (such as the ClickHouse SQL driver).
 
-If the value is a string then an attempt will be made to parse it as a 64-bit floating point number. Please refer to the [`+"`strconv.ParseFloat`"+` documentation](https://pkg.go.dev/strconv#ParseFloat) for details regarding the supported formats.`).
+If the value is a string then an attempt will be made to parse it as a 64-bit floating point number. Please refer to the https://pkg.go.dev/strconv#ParseFloat[`+"`strconv.ParseFloat`"+` documentation] for details regarding the supported formats.`).
 			Example("", `
 root.out = this.in.float64()
 `,
@@ -119,17 +119,15 @@ root.out = this.in.float64()
 			return func(input any) (any, error) {
 				return value.IToFloat64(input)
 			}, nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 
-	if err := bloblang.RegisterMethodV2("float32",
+	bloblang.MustRegisterMethodV2("float32",
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryNumbers).
 			Description(`
 Converts a numerical type into a 32-bit floating point number, this is for advanced use cases where a specific data type is needed for a given component (such as the ClickHouse SQL driver).
 
-If the value is a string then an attempt will be made to parse it as a 32-bit floating point number. Please refer to the [`+"`strconv.ParseFloat`"+` documentation](https://pkg.go.dev/strconv#ParseFloat) for details regarding the supported formats.`).
+If the value is a string then an attempt will be made to parse it as a 32-bit floating point number. Please refer to the https://pkg.go.dev/strconv#ParseFloat[`+"`strconv.ParseFloat`"+` documentation] for details regarding the supported formats.`).
 			Example("", `
 root.out = this.in.float32()
 `,
@@ -139,11 +137,9 @@ root.out = this.in.float32()
 			return func(input any) (any, error) {
 				return value.IToFloat32(input)
 			}, nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 
-	if err := bloblang.RegisterMethodV2("abs",
+	bloblang.MustRegisterMethodV2("abs",
 		bloblang.NewPluginSpec().
 			Category(query.MethodCategoryNumbers).
 			Description(`Returns the absolute value of an int64 or float64 number. As a special case, when an integer is provided that is the minimum value it is converted to the maximum value.`).
@@ -170,7 +166,83 @@ root.outs = this.ins.map_each(ele -> ele.abs())
 				}
 				return nil, value.NewTypeError(input, value.TNumber, value.TInt)
 			}, nil
-		}); err != nil {
-		panic(err)
-	}
+		})
+
+	bloblang.MustRegisterMethodV2("pow",
+		bloblang.NewPluginSpec().
+			Category(query.MethodCategoryNumbers).
+			Description(`Returns the number raised to the specified exponent.`).
+			Example("", `root.new_value = this.value * 10.pow(-2)`,
+				[2]string{`{"value":2}`, `{"new_value":0.02}`}).
+			Example("", `root.new_value = this.value.pow(-2)`,
+				[2]string{`{"value":2}`, `{"new_value":0.25}`}).
+			Param(bloblang.NewFloat64Param("exponent").
+				Description("The exponent you want to raise to the power of.")),
+		func(args *bloblang.ParsedParams) (bloblang.Method, error) {
+			return bloblang.Float64Method(func(input float64) (any, error) {
+				exp, err := args.GetFloat64("exponent")
+				if err != nil {
+					return nil, err
+				}
+				return math.Pow(input, exp), nil
+			}), nil
+		})
+
+	bloblang.MustRegisterMethodV2("sin",
+		bloblang.NewPluginSpec().
+			Category(query.MethodCategoryNumbers).
+			Description(`Calculates the sine of a given angle specified in radians.`).
+			Example("", `root.new_value = (this.value * (pi() / 180)).sin()`,
+				[2]string{`{"value":45}`, `{"new_value":0.7071067811865475}`},
+				[2]string{`{"value":0}`, `{"new_value":0}`},
+				[2]string{`{"value":90}`, `{"new_value":1}`}),
+		func(args *bloblang.ParsedParams) (bloblang.Method, error) {
+			return bloblang.Float64Method(func(input float64) (any, error) {
+				return math.Sin(input), nil
+			}), nil
+		})
+
+	bloblang.MustRegisterMethodV2("cos",
+		bloblang.NewPluginSpec().
+			Category(query.MethodCategoryNumbers).
+			Description(`Calculates the cosine of a given angle specified in radians.`).
+			Example("", `root.new_value = (this.value * (pi() / 180)).cos()`,
+				[2]string{`{"value":45}`, `{"new_value":0.7071067811865476}`},
+				[2]string{`{"value":0}`, `{"new_value":1}`},
+				[2]string{`{"value":180}`, `{"new_value":-1}`}),
+		func(args *bloblang.ParsedParams) (bloblang.Method, error) {
+			return bloblang.Float64Method(func(input float64) (any, error) {
+				return math.Cos(input), nil
+			}), nil
+		})
+
+	bloblang.MustRegisterMethodV2("tan",
+		bloblang.NewPluginSpec().
+			Category(query.MethodCategoryNumbers).
+			Description(`Calculates the tangent of a given angle specified in radians.`).
+			Example("", `root.new_value = "%f".format((this.value * (pi() / 180)).tan())`,
+				[2]string{`{"value":0}`, `{"new_value":"0.000000"}`},
+				[2]string{`{"value":45}`, `{"new_value":"1.000000"}`},
+				[2]string{`{"value":180}`, `{"new_value":"-0.000000"}`}),
+		func(args *bloblang.ParsedParams) (bloblang.Method, error) {
+			return bloblang.Float64Method(func(input float64) (any, error) {
+				return math.Tan(input), nil
+			}), nil
+		})
+
+	//------------------------------------------------------------------------------
+
+	bloblang.MustRegisterFunctionV2("pi",
+		bloblang.NewPluginSpec().
+			Category(query.FunctionCategoryGeneral).
+			Description(`Returns the value of the mathematical constant Pi.`).
+			Example("", `root.radians = this.degrees * (pi() / 180)`,
+				[2]string{`{"degrees":45}`, `{"radians":0.7853981633974483}`}).
+			Example("", `root.degrees = this.radians * (180 / pi())`,
+				[2]string{`{"radians":0.78540}`, `{"degrees":45.00010522957486}`}),
+		func(args *bloblang.ParsedParams) (bloblang.Function, error) {
+			return func() (any, error) {
+				return math.Pi, nil
+			}, nil
+		})
 }

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package log
 
 import (
@@ -10,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
 )
 
 // Logger is an object with support for levelled logging and modular components.
@@ -142,62 +144,60 @@ func (l *Logger) With(keyValues ...any) Modular {
 
 // Fatal prints a fatal message to the console. Does NOT cause panic.
 func (l *Logger) Fatal(format string, v ...any) {
-	l.entry.Fatalf(strings.TrimSuffix(format, "\n"), v...)
+	f := strings.TrimSuffix(format, "\n")
+	if len(v) > 0 {
+		l.entry.Fatalf(f, v...)
+	} else {
+		l.entry.Fatal(f)
+	}
 }
 
 // Error prints an error message to the console.
 func (l *Logger) Error(format string, v ...any) {
-	l.entry.Errorf(strings.TrimSuffix(format, "\n"), v...)
+	f := strings.TrimSuffix(format, "\n")
+	if len(v) > 0 {
+		l.entry.Errorf(f, v...)
+	} else {
+		l.entry.Error(f)
+	}
 }
 
 // Warn prints a warning message to the console.
 func (l *Logger) Warn(format string, v ...any) {
-	l.entry.Warnf(strings.TrimSuffix(format, "\n"), v...)
+	f := strings.TrimSuffix(format, "\n")
+	if len(v) > 0 {
+		l.entry.Warnf(f, v...)
+	} else {
+		l.entry.Warn(f)
+	}
 }
 
 // Info prints an information message to the console.
 func (l *Logger) Info(format string, v ...any) {
-	l.entry.Infof(strings.TrimSuffix(format, "\n"), v...)
+	f := strings.TrimSuffix(format, "\n")
+	if len(v) > 0 {
+		l.entry.Infof(f, v...)
+	} else {
+		l.entry.Info(f)
+	}
 }
 
 // Debug prints a debug message to the console.
 func (l *Logger) Debug(format string, v ...any) {
-	l.entry.Debugf(strings.TrimSuffix(format, "\n"), v...)
+	f := strings.TrimSuffix(format, "\n")
+	if len(v) > 0 {
+		l.entry.Debugf(f, v...)
+	} else {
+		l.entry.Debug(f)
+	}
 }
 
 // Trace prints a trace message to the console.
 func (l *Logger) Trace(format string, v ...any) {
-	l.entry.Tracef(strings.TrimSuffix(format, "\n"), v...)
-}
-
-//------------------------------------------------------------------------------
-
-// Fatalln prints a fatal message to the console. Does NOT cause panic.
-func (l *Logger) Fatalln(message string) {
-	l.entry.Fatalln(message)
-}
-
-// Errorln prints an error message to the console.
-func (l *Logger) Errorln(message string) {
-	l.entry.Errorln(message)
-}
-
-// Warnln prints a warning message to the console.
-func (l *Logger) Warnln(message string) {
-	l.entry.Warnln(message)
-}
-
-// Infoln prints an information message to the console.
-func (l *Logger) Infoln(message string) {
-	l.entry.Infoln(message)
-}
-
-// Debugln prints a debug message to the console.
-func (l *Logger) Debugln(message string) {
-	l.entry.Debugln(message)
-}
-
-// Traceln prints a trace message to the console.
-func (l *Logger) Traceln(message string) {
-	l.entry.Traceln(message)
+	f := strings.TrimSuffix(format, "\n")
+	if len(v) > 0 {
+		l.entry.Tracef(f, v...)
+	} else {
+		l.entry.Trace(f)
+	}
 }

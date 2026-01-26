@@ -1,7 +1,9 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bloblang
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
 )
 
 type environmentUnwrapper struct {

@@ -10,55 +10,56 @@ on:
 
 jobs:
   test:
-    if: ${{ github.repository == 'benthosdev/benthos' || github.event_name != 'schedule' }}
+    if: ${{ github.repository == 'redpanda-data/benthos' || github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: 0
     steps:
 
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
-        go-version: 1.21.x
-        check-latest: true
+        go-version: stable
+
+    - name: Install Task
+      uses: ./.github/actions/setup-task
 
     - name: Deps
-      run: make deps && git diff-index --quiet HEAD || { >&2 echo "Stale go.{mod,sum} detected. This can be fixed with 'make deps'."; exit 1; }
-
-    - name: Docs
-      run: make docs && git diff-index --quiet HEAD || { >&2 echo "Stale docs detected. This can be fixed with 'make docs'."; exit 1; }
+      run: task deps && git diff-index --quiet HEAD || { >&2 echo "Stale go.{mod,sum} detected. This can be fixed with 'task deps'."; exit 1; }
 
     - name: Test
-      run: make test
+      run: task test
+
+    - name: Test WASM build
+      run: task build:benthos-wasm
 
   golangci-lint:
-    if: ${{ github.repository == 'benthosdev/benthos' || github.event_name != 'schedule' }}
+    if: ${{ github.repository == 'redpanda-data/benthos' || github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     env:
       CGO_ENABLED: 0
     steps:
 
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
-        go-version: 1.21.x
-        check-latest: true
+        go-version: stable
+
+    - name: Set version env variables
+      run: |
+        cat .versions >> $GITHUB_ENV
 
     - name: Lint
-      uses: golangci/golangci-lint-action@v4
+      uses: golangci/golangci-lint-action@v9
       with:
-        version: v1.57.1
-        args: --timeout 30m cmd/... internal/... public/...
+        version: "v${{env.GOLANGCI_LINT_VERSION}}"
+        args: "cmd/... internal/... public/..."
+        skip-cache: true
+        skip-save-cache: true
 
-    # TODO: Remove this after https://github.com/golangci/golangci-lint/issues/3094 is addressed
-    # - name: Get govulncheck
-    #   run: go install golang.org/x/vuln/cmd/govulncheck@latest
-
-    # - name: Run govulncheck
-    #   run: govulncheck ./...

@@ -1,23 +1,25 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"sync"
 
 	"github.com/gorilla/websocket"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/httpclient"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func websocketOutputSpec() *service.ConfigSpec {
@@ -26,9 +28,10 @@ func websocketOutputSpec() *service.ConfigSpec {
 		Categories("Network").
 		Summary("Sends messages to an HTTP server via a websocket connection.").
 		Field(service.NewURLField("url").Description("The URL to connect to.")).
+		Field(service.NewURLField("proxy_url").Description("An optional HTTP proxy URL.").Advanced().Optional()).
 		Field(service.NewTLSToggledField("tls"))
 
-	for _, f := range httpclient.AuthFieldSpecs() {
+	for _, f := range service.NewHTTPRequestAuthSignerFields() {
 		spec = spec.Field(f)
 	}
 
@@ -36,7 +39,7 @@ func websocketOutputSpec() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"websocket", websocketOutputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			maxInFlight = 1
@@ -52,9 +55,6 @@ func init() {
 			out = interop.NewUnwrapInternalOutput(o)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type websocketWriter struct {
@@ -63,12 +63,13 @@ type websocketWriter struct {
 
 	lock *sync.Mutex
 
-	client     *websocket.Conn
-	urlParsed  *url.URL
-	urlStr     string
-	tlsEnabled bool
-	tlsConf    *tls.Config
-	reqSigner  httpclient.RequestSigner
+	client         *websocket.Conn
+	urlParsed      *url.URL
+	urlStr         string
+	proxyURLParsed *url.URL
+	tlsEnabled     bool
+	tlsConf        *tls.Config
+	reqSigner      func(f fs.FS, req *http.Request) error
 }
 
 func newWebsocketWriterFromParsed(conf *service.ParsedConfig, mgr bundle.NewManagement) (*websocketWriter, error) {
@@ -85,10 +86,15 @@ func newWebsocketWriterFromParsed(conf *service.ParsedConfig, mgr bundle.NewMana
 	if ws.urlStr, err = conf.FieldString("url"); err != nil {
 		return nil, err
 	}
+	if conf.Contains("proxy_url") {
+		if ws.proxyURLParsed, err = conf.FieldURL("proxy_url"); err != nil {
+			return nil, err
+		}
+	}
 	if ws.tlsConf, ws.tlsEnabled, err = conf.FieldTLSToggled("tls"); err != nil {
 		return nil, err
 	}
-	if ws.reqSigner, err = httpclient.AuthSignerFromParsed(conf); err != nil {
+	if ws.reqSigner, err = conf.HTTPRequestAuthSignerFromParsed(); err != nil {
 		return nil, err
 	}
 	return ws, nil
@@ -101,6 +107,47 @@ func (w *websocketWriter) getWS() *websocket.Conn {
 	return ws
 }
 
+func (w *websocketWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	conn, res, err := w.dial(ctx)
+	if err != nil {
+		return component.ConnectionTestFailed(w.mgr, err).AsList()
+	}
+
+	if res != nil {
+		_ = res.Body.Close()
+	}
+
+	_ = conn.Close()
+	return component.ConnectionTestSucceeded(w.mgr).AsList()
+}
+
+func (w *websocketWriter) dial(ctx context.Context) (conn *websocket.Conn, res *http.Response, err error) {
+	headers := http.Header{}
+
+	if err = w.reqSigner(w.mgr.FS(), &http.Request{
+		URL:    w.urlParsed,
+		Header: headers,
+	}); err != nil {
+		return
+	}
+
+	dialer := *websocket.DefaultDialer
+	if w.proxyURLParsed != nil {
+		dialer.Proxy = http.ProxyURL(w.proxyURLParsed)
+	}
+
+	if w.tlsEnabled {
+		dialer.TLSClientConfig = w.tlsConf
+		if conn, res, err = dialer.Dial(w.urlStr, headers); err != nil {
+			return
+		}
+	} else if conn, res, err = dialer.Dial(w.urlStr, headers); err != nil {
+		return
+	}
+
+	return
+}
+
 func (w *websocketWriter) Connect(ctx context.Context) error {
 	w.lock.Lock()
 	defer w.lock.Unlock()
@@ -109,35 +156,13 @@ func (w *websocketWriter) Connect(ctx context.Context) error {
 		return nil
 	}
 
-	headers := http.Header{}
-
-	err := w.reqSigner(w.mgr.FS(), &http.Request{
-		URL:    w.urlParsed,
-		Header: headers,
-	})
-	if err != nil {
-		return err
-	}
-
-	var (
-		client *websocket.Conn
-		res    *http.Response
-	)
-
+	client, res, err := w.dial(ctx)
 	defer func() {
 		if res != nil {
 			res.Body.Close()
 		}
 	}()
-
-	if w.tlsEnabled {
-		dialer := websocket.Dialer{
-			TLSClientConfig: w.tlsConf,
-		}
-		if client, res, err = dialer.Dial(w.urlStr, headers); err != nil {
-			return err
-		}
-	} else if client, res, err = websocket.DefaultDialer.Dial(w.urlStr, headers); err != nil {
+	if err != nil {
 		return err
 	}
 

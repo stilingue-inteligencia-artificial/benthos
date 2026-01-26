@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package message
 
 // Contains underlying allocated data for messages.
@@ -13,6 +15,10 @@ type messageData struct {
 	readOnlyMeta bool
 	metadata     map[string]any
 }
+
+// defaultMetadataSize specifies how many metadata entries are preallocated by
+// default when adding metadata to a message.
+const defaultMetadataSize = 5
 
 func newMessageBytes(content []byte) *messageData {
 	return &messageData{
@@ -32,6 +38,14 @@ func (m *messageData) AsBytes() []byte {
 		m.rawBytes = encodeJSON(m.structured)
 	}
 	return m.rawBytes
+}
+
+func (m *messageData) HasBytes() bool {
+	return m.rawBytes != nil
+}
+
+func (m *messageData) HasStructured() bool {
+	return m.structured != nil
 }
 
 func (m *messageData) SetStructured(jObj any) {
@@ -71,7 +85,7 @@ func (m *messageData) AsStructuredMut() (any, error) {
 		if m.structured != nil {
 			m.structured = cloneGeneric(m.structured)
 		}
-		m.readOnlyStructured = true
+		m.readOnlyStructured = false
 	}
 
 	v, err := m.AsStructured()
@@ -170,10 +184,7 @@ func (m *messageData) MetaGetMut(key string) (any, bool) {
 func (m *messageData) MetaSetMut(key string, value any) {
 	m.writeableMeta()
 	if m.metadata == nil {
-		m.metadata = map[string]any{
-			key: value,
-		}
-		return
+		m.metadata = make(map[string]any, defaultMetadataSize)
 	}
 	m.metadata[key] = value
 }

@@ -1,29 +1,32 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Jeffail/gabs/v2"
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/config"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/stream"
-	"github.com/benthosdev/benthos/v4/internal/value"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 func (m *Type) registerEndpoints(enableCrud bool) {
@@ -292,7 +295,7 @@ func (m *Type) HandleStreamCRUD(w http.ResponseWriter, r *http.Request) {
 
 		ignoreLints := r.URL.Query().Get("chilled") == "true"
 
-		if confBytes, err = config.ReplaceEnvVariables(confBytes, os.LookupEnv); err != nil {
+		if confBytes, err = config.NewReader("", nil).ReplaceEnvVariables(context.TODO(), confBytes); err != nil {
 			var errEnvMissing *config.ErrMissingEnvVars
 			if ignoreLints && errors.As(err, &errEnvMissing) {
 				confBytes = errEnvMissing.BestAttempt
@@ -358,6 +361,17 @@ func (m *Type) HandleStreamCRUD(w http.ResponseWriter, r *http.Request) {
 
 	var conf stream.Config
 	var lints []string
+
+	ctx := r.Context()
+	if timeout := r.URL.Query().Get("timeout"); timeout != "" {
+		d, err := time.ParseDuration(timeout)
+		if err == nil { // ignore bad timeout query
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, d)
+			defer cancel()
+		}
+	}
+
 	switch r.Method {
 	case "POST":
 		if conf, lints, requestErr = readConfig(); requestErr != nil {
@@ -410,16 +424,16 @@ func (m *Type) HandleStreamCRUD(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(errBytes)
 			return
 		}
-		serverErr = m.Update(r.Context(), id, conf)
+		serverErr = m.Update(ctx, id, conf)
 	case "DELETE":
-		serverErr = m.Delete(r.Context(), id)
+		serverErr = m.Delete(ctx, id)
 	case "PATCH":
 		var info *StreamStatus
 		if info, serverErr = m.Read(id); serverErr == nil {
 			if conf, requestErr = patchConfig(info.Config()); requestErr != nil {
 				return
 			}
-			serverErr = m.Update(r.Context(), id, conf)
+			serverErr = m.Update(ctx, id, conf)
 		}
 	default:
 		requestErr = fmt.Errorf("verb not supported: %v", r.Method)
@@ -529,7 +543,7 @@ func (m *Type) HandleResourceCRUD(w http.ResponseWriter, r *http.Request) {
 
 		ignoreLints := r.URL.Query().Get("chilled") == "true"
 
-		if confBytes, requestErr = config.ReplaceEnvVariables(confBytes, os.LookupEnv); requestErr != nil {
+		if confBytes, requestErr = config.NewReader("", nil).ReplaceEnvVariables(r.Context(), confBytes); requestErr != nil {
 			var errEnvMissing *config.ErrMissingEnvVars
 			if ignoreLints && errors.As(requestErr, &errEnvMissing) {
 				confBytes = errEnvMissing.BestAttempt

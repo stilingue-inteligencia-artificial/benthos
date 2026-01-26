@@ -1,6 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tls
 
-import "github.com/benthosdev/benthos/v4/internal/docs"
+import "github.com/redpanda-data/benthos/v4/internal/docs"
 
 // FieldSpec returns a spec for a common TLS field.
 func FieldSpec() docs.FieldSpec {
@@ -46,7 +48,10 @@ func FieldSpec() docs.FieldSpec {
 			docs.FieldString("key", "A plain text certificate key to use.").HasDefault("").Secret(),
 			docs.FieldString("cert_file", "The path of a certificate to use.").HasDefault(""),
 			docs.FieldString("key_file", "The path of a certificate key to use.").HasDefault(""),
-			docs.FieldString("password", "A plain text password for when the private key is password encrypted in PKCS#1 or PKCS#8 format. The obsolete `pbeWithMD5AndDES-CBC` algorithm is not supported for the PKCS#8 format. Warning: Since it does not authenticate the ciphertext, it is vulnerable to padding oracle attacks that can let an attacker recover the plaintext.", "foo", "${KEY_PASSWORD}").HasDefault("").Secret(),
+			docs.FieldString("password", `A plain text password for when the private key is password encrypted in PKCS#1 or PKCS#8 format. The obsolete `+"`pbeWithMD5AndDES-CBC`"+` algorithm is not supported for the PKCS#8 format.
+
+Because the obsolete pbeWithMD5AndDES-CBC algorithm does not authenticate the ciphertext, it is vulnerable to padding oracle attacks that can let an attacker recover the plaintext.
+`, "foo", "${KEY_PASSWORD}").HasDefault("").Secret(),
 		).HasDefault([]any{}),
 	).Advanced()
 }

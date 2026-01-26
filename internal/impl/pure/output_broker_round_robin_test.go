@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -9,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var _ output.Streamed = &roundRobinOutputBroker{}
@@ -31,7 +33,7 @@ func TestRoundRobinDoubleClose(t *testing.T) {
 //------------------------------------------------------------------------------
 
 func TestBasicRoundRobin(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	nMsgs := 1000
@@ -59,6 +61,8 @@ func TestBasicRoundRobin(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	oTM.TriggerStartConsuming()
 
 	for i := 0; i < nMsgs; i++ {
 		content := [][]byte{[]byte(fmt.Sprintf("hello world %v", i))}
@@ -107,7 +111,7 @@ func TestBasicRoundRobin(t *testing.T) {
 //------------------------------------------------------------------------------
 
 func BenchmarkBasicRoundRobin(b *testing.B) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(b.Context(), time.Second*5)
 	defer done()
 
 	nOutputs, nMsgs := 3, b.N
@@ -132,6 +136,8 @@ func BenchmarkBasicRoundRobin(b *testing.B) {
 		b.Error(err)
 		return
 	}
+
+	oTM.TriggerStartConsuming()
 
 	content := [][]byte{[]byte("hello world")}
 

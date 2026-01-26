@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -11,92 +13,15 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/retries"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
-
-const (
-	crboFieldMaxRetries     = "max_retries"
-	crboFieldBackOff        = "backoff"
-	crboFieldInitInterval   = "initial_interval"
-	crboFieldMaxInterval    = "max_interval"
-	crboFieldMaxElapsedTime = "max_elapsed_time"
-)
-
-func CommonRetryBackOffFields(
-	defaultMaxRetries int,
-	defaultInitInterval string,
-	defaultMaxInterval string,
-	defaultMaxElapsed string,
-) []*service.ConfigField {
-	return []*service.ConfigField{
-		service.NewIntField(crboFieldMaxRetries).
-			Description("The maximum number of retries before giving up on the request. If set to zero there is no discrete limit.").
-			Default(defaultMaxRetries).
-			Advanced(),
-		service.NewObjectField(crboFieldBackOff,
-			service.NewDurationField(crboFieldInitInterval).
-				Description("The initial period to wait between retry attempts.").
-				Default(defaultInitInterval),
-			service.NewDurationField(crboFieldMaxInterval).
-				Description("The maximum period to wait between retry attempts.").
-				Default(defaultMaxInterval),
-			service.NewDurationField(crboFieldMaxElapsedTime).
-				Description("The maximum period to wait before retry attempts are abandoned. If zero then no limit is used.").
-				Default(defaultMaxElapsed),
-		).
-			Description("Control time intervals between retry attempts.").
-			Advanced(),
-	}
-}
-
-func fieldDurationOrEmptyStr(pConf *service.ParsedConfig, path ...string) (time.Duration, error) {
-	if dStr, err := pConf.FieldString(path...); err == nil && dStr == "" {
-		return 0, nil
-	}
-	return pConf.FieldDuration(path...)
-}
-
-func CommonRetryBackOffCtorFromParsed(pConf *service.ParsedConfig) (ctor func() backoff.BackOff, err error) {
-	var maxRetries int
-	if maxRetries, err = pConf.FieldInt(crboFieldMaxRetries); err != nil {
-		return
-	}
-
-	var initInterval, maxInterval, maxElapsed time.Duration
-	if pConf.Contains(crboFieldBackOff) {
-		bConf := pConf.Namespace(crboFieldBackOff)
-		if initInterval, err = fieldDurationOrEmptyStr(bConf, crboFieldInitInterval); err != nil {
-			return
-		}
-		if maxInterval, err = fieldDurationOrEmptyStr(bConf, crboFieldMaxInterval); err != nil {
-			return
-		}
-		if maxElapsed, err = fieldDurationOrEmptyStr(bConf, crboFieldMaxElapsedTime); err != nil {
-			return
-		}
-	}
-
-	return func() backoff.BackOff {
-		boff := backoff.NewExponentialBackOff()
-
-		boff.InitialInterval = initInterval
-		boff.MaxInterval = maxInterval
-		boff.MaxElapsedTime = maxElapsed
-
-		if maxRetries > 0 {
-			return backoff.WithMaxRetries(boff, uint64(maxRetries))
-		}
-		return boff
-	}, nil
-}
-
-//------------------------------------------------------------------------------
 
 const roFieldOutput = "output"
 
@@ -106,12 +31,12 @@ func retryOutputSpec() *service.ConfigSpec {
 		Stable().
 		Summary("Attempts to write messages to a child output and if the write fails for any reason the message is retried either until success or, if the retries or max elapsed time fields are non-zero, either is reached.").
 		Description(`
-All messages in Benthos are always retried on an output error, but this would usually involve propagating the error back to the source of the message, whereby it would be reprocessed before reaching the output layer once again.
+All messages in Redpanda Connect are always retried on an output error, but this would usually involve propagating the error back to the source of the message, whereby it would be reprocessed before reaching the output layer once again.
 
-This output type is useful whenever we wish to avoid reprocessing a message on the event of a failed send. We might, for example, have a dedupe processor that we want to avoid reapplying to the same message more than once in the pipeline.
+This output type is useful whenever we wish to avoid reprocessing a message on the event of a failed send. We might, for example, have a deduplication processor that we want to avoid reapplying to the same message more than once in the pipeline.
 
-Rather than retrying the same output you may wish to retry the send using a different output target (a dead letter queue). In which case you should instead use the ` + "[`fallback`](/docs/components/outputs/fallback)" + ` output type.`).
-		Fields(CommonRetryBackOffFields(0, "500ms", "3s", "0s")...).
+Rather than retrying the same output you may wish to retry the send using a different output target (a dead letter queue). In which case you should instead use the ` + "xref:components:outputs/fallback.adoc[`fallback`]" + ` output type.`).
+		Fields(retries.CommonRetryBackOffFields(0, "500ms", "3s", "0s")...).
 		Fields(
 			service.NewOutputField(roFieldOutput).
 				Description("A child output."),
@@ -119,7 +44,7 @@ Rather than retrying the same output you may wish to retry the send using a diff
 }
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"retry", retryOutputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			maxInFlight = 1
@@ -131,9 +56,6 @@ func init() {
 			out = interop.NewUnwrapInternalOutput(s)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -152,7 +74,7 @@ func retryOutputFromConfig(conf *service.ParsedConfig, mgr bundle.NewManagement)
 	}
 
 	var boffCtor func() backoff.BackOff
-	if boffCtor, err = CommonRetryBackOffCtorFromParsed(conf); err != nil {
+	if boffCtor, err = retries.CommonRetryBackOffCtorFromParsed(conf); err != nil {
 		return nil, err
 	}
 
@@ -190,7 +112,8 @@ type indefiniteRetry struct {
 	transactionsIn  <-chan message.Transaction
 	transactionsOut chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func (r *indefiniteRetry) loop() {
@@ -321,14 +244,22 @@ func (r *indefiniteRetry) Consume(ts <-chan message.Transaction) error {
 		return err
 	}
 	r.transactionsIn = ts
-	go r.loop()
 	return nil
 }
 
-// Connected returns a boolean indicating whether this output is currently
-// connected to its target.
-func (r *indefiniteRetry) Connected() bool {
-	return r.wrapped.Connected()
+func (r *indefiniteRetry) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return r.wrapped.ConnectionTest(ctx)
+}
+
+func (r *indefiniteRetry) ConnectionStatus() component.ConnectionStatuses {
+	return r.wrapped.ConnectionStatus()
+}
+
+func (r *indefiniteRetry) TriggerStartConsuming() {
+	r.startOnce.Do(func() {
+		r.wrapped.TriggerStartConsuming()
+		go r.loop()
+	})
 }
 
 // CloseAsync shuts down the Retry input and stops processing requests.

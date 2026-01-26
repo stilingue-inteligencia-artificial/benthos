@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 // ExampleSpec provides a mapping example and some input/output results to
@@ -162,6 +164,7 @@ func NewHiddenFunctionSpec(name string) FunctionSpec {
 
 // Method categories.
 var (
+	MethodCategoryGeneral        = "General"
 	MethodCategoryStrings        = "String Manipulation"
 	MethodCategoryNumbers        = "Number Manipulation"
 	MethodCategoryTime           = "Timestamp Manipulation"
@@ -298,5 +301,9 @@ func (m MethodSpec) InCategory(category, description string, examples ...Example
 		Examples:    examples,
 	})
 	m.Categories = cats
+
+	// Aggregate examples into the top-level Examples field
+	m.Examples = append(m.Examples, examples...)
+
 	return m
 }

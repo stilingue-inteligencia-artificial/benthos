@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -5,7 +7,7 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/benthosdev/benthos/v4/internal/autoretry"
+	"github.com/redpanda-data/benthos/v4/internal/autoretry"
 )
 
 // AutoRetryNacksToggled wraps an input implementation with AutoRetryNacks only
@@ -44,6 +46,14 @@ type autoRetryInput struct {
 	retryList   *autoretry.List[*Message]
 	child       Input
 	inputClosed int32
+}
+
+func (i *autoRetryInput) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	t, ok := i.child.(ConnectionTestable)
+	if !ok {
+		return ConnectionTestNotSupported().AsList()
+	}
+	return t.ConnectionTest(ctx)
 }
 
 func (i *autoRetryInput) Connect(ctx context.Context) error {

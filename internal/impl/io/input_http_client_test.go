@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
@@ -17,12 +19,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/io"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/io"
 )
 
 func parseYAMLInputConf(t testing.TB, formatStr string, args ...any) (conf input.Config) {
@@ -34,7 +36,7 @@ func parseYAMLInputConf(t testing.TB, formatStr string, args ...any) (conf input
 }
 
 func TestHTTPClientGET(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	inputs := []string{
@@ -72,6 +74,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	var tr message.Transaction
 	var open bool
 
@@ -102,7 +106,7 @@ http_client:
 }
 
 func TestHTTPClientPagination(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	var paths []string
@@ -123,6 +127,8 @@ http_client:
 
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
+
+	h.TriggerStartConsuming()
 
 	var tr message.Transaction
 	var open bool
@@ -176,6 +182,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < 3; i++ {
 		select {
 		case <-requestChan:
@@ -184,7 +192,7 @@ http_client:
 		}
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	h.TriggerStopConsuming()
@@ -203,9 +211,11 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	<-time.After(time.Millisecond * 500)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	h.TriggerStopConsuming()
@@ -226,9 +236,11 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	<-time.After(time.Millisecond * 500)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	h.TriggerStopConsuming()
@@ -259,13 +271,15 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	select {
 	case <-requestChan:
 	case <-time.After(time.Second):
 		t.Error("Timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	h.TriggerStopConsuming()
@@ -273,7 +287,7 @@ http_client:
 }
 
 func TestHTTPClientPOST(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	var reqCount uint32
@@ -318,6 +332,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	for _, expPart := range inputs {
 		var ts message.Transaction
 		var open bool
@@ -348,7 +364,7 @@ http_client:
 }
 
 func TestHTTPClientGETMultipart(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	var reqCount uint32
@@ -392,6 +408,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	var tr message.Transaction
 	var open bool
 
@@ -426,7 +444,7 @@ http_client:
 }
 
 func TestHTTPClientGETMultipartLoop(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	tests := [][]string{
@@ -494,6 +512,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	reqMut.Lock()
 	for _, test := range tests {
 		var ts message.Transaction
@@ -536,7 +556,7 @@ http_client:
 }
 
 func TestHTTPClientStreamGETMultipartLoop(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	tests := [][]string{
@@ -593,6 +613,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	for _, test := range tests {
 		var ts message.Transaction
 		var open bool
@@ -621,7 +643,7 @@ http_client:
 }
 
 func TestHTTPClientStreamGETMultiRecover(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	msgs := [][]string{
@@ -660,6 +682,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < 10; i++ {
 		for _, testMsg := range msgs {
 			var ts message.Transaction
@@ -691,7 +715,7 @@ http_client:
 }
 
 func TestHTTPClientStreamGETRecover(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	msgs := []string{"foo", "bar"}
@@ -723,6 +747,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < 10; i++ {
 		for _, testMsg := range msgs {
 			var ts message.Transaction
@@ -752,7 +778,7 @@ http_client:
 }
 
 func TestHTTPClientStreamGETTokenization(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	msgs := []string{`{"token":"foo"}`, `{"token":"bar"}`}
@@ -792,6 +818,8 @@ http_client:
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	h.TriggerStartConsuming()
+
 	for i := 0; i < 10; i++ {
 		if i == 9 {
 			tokensLock.Lock()
@@ -825,7 +853,7 @@ http_client:
 }
 
 func BenchmarkHTTPClientGETMultipart(b *testing.B) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(b.Context(), time.Second*5)
 	defer done()
 
 	parts := []string{
@@ -869,6 +897,8 @@ http_client:
 
 	h, err := mock.NewManager().NewInput(conf)
 	require.NoError(b, err)
+
+	h.TriggerStartConsuming()
 
 	b.ReportAllocs()
 	b.ResetTimer()

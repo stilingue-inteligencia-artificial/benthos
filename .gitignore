@@ -1,3 +1,4 @@
+bin
 target
 vendor
 tmp
@@ -8,4 +9,6 @@ TODO.md
 release_notes.md
 .idea
 .vscode
+.task
 .op
+benthos

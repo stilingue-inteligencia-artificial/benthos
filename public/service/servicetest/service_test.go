@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package servicetest_test
 
 import (
@@ -11,9 +13,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/io"
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
-	"github.com/benthosdev/benthos/v4/public/service/servicetest"
+	_ "github.com/redpanda-data/benthos/v4/public/components/io"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
+	"github.com/redpanda-data/benthos/v4/public/service/servicetest"
 )
 
 func TestRunCLIShutdown(t *testing.T) {
@@ -32,7 +34,7 @@ output:
     path: %v
 `, outPath), 0o644))
 
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(time.Second))
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(time.Second))
 	defer cancel()
 
 	servicetest.RunCLIWithArgs(ctx, "benthos", "-c", confPath)

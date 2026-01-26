@@ -1,13 +1,15 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"errors"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchBuffer(
+	service.MustRegisterBatchBuffer(
 		"none",
 		service.NewConfigSpec().
 			Stable().
@@ -19,7 +21,4 @@ If the output layer is hit with back pressure it will propagate all the way to t
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchBuffer, error) {
 			return nil, errors.New("not implemented")
 		})
-	if err != nil {
-		panic(err)
-	}
 }

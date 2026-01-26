@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
@@ -6,9 +8,9 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	ioutput "github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	ioutput "github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var _ ioutput.Sync = &outputWrapper{}
@@ -45,10 +47,16 @@ func (w *outputWrapper) WriteTransaction(ctx context.Context, t message.Transact
 	return nil
 }
 
-// Connected returns a boolean indicating whether this output is currently
-// connected to its target.
-func (w *outputWrapper) Connected() bool {
-	return w.output.Connected()
+func (w *outputWrapper) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return w.output.ConnectionTest(ctx)
+}
+
+func (w *outputWrapper) ConnectionStatus() component.ConnectionStatuses {
+	return w.output.ConnectionStatus()
+}
+
+func (w *outputWrapper) TriggerStartConsuming() {
+	w.output.TriggerStartConsuming()
 }
 
 func (w *outputWrapper) TriggerStopConsuming() {

@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -10,9 +11,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestInsertBoundaries(t *testing.T) {
@@ -36,7 +37,7 @@ insert_part:
 				parts = append(parts, []byte("foo"))
 			}
 
-			msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(parts))
+			msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(parts))
 			if len(msgs) != 1 {
 				t.Error("Insert Part failed")
 			} else if res != nil {
@@ -176,7 +177,7 @@ insert_part:
 			return
 		}
 
-		msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(test.in))
+		msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(test.in))
 		if len(msgs) != 1 {
 			t.Errorf("Insert Part failed on: %s", test.in)
 		} else if res != nil {
@@ -229,7 +230,7 @@ insert_part:
 	}
 
 	for _, test := range tests {
-		msgs, res := proc.ProcessBatch(context.Background(), message.QuickBatch(test.in))
+		msgs, res := proc.ProcessBatch(t.Context(), message.QuickBatch(test.in))
 		if len(msgs) != 1 {
 			t.Errorf("Insert Part failed on: %s", test.in)
 		} else if res != nil {

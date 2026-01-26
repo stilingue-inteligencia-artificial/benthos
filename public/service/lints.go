@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -5,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 // LintType is a discrete linting type.
 // NOTE: These should be kept in sync with ./internal/docs/field.go:586.
+//
+//go:generate go run golang.org/x/tools/cmd/stringer@v0.33.0 -type=LintType
 type LintType int
 
 const (

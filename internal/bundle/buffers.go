@@ -1,12 +1,14 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bundle
 
 import (
 	"fmt"
 	"sort"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 // AllBuffers is a set containing every single buffer that has been imported.
@@ -95,4 +97,39 @@ func (s *BufferSet) DocsFor(name string) (docs.ComponentSpec, bool) {
 		return docs.ComponentSpec{}, false
 	}
 	return c.spec, true
+}
+
+// Without creates a clone of the set excluding a variadic list of components.
+func (s *BufferSet) Without(names ...string) *BufferSet {
+	newSet := &BufferSet{
+		specs: map[string]bufferSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			continue
+		}
+		newSet.specs[k] = v
+	}
+	return newSet
+}
+
+// With creates a clone of the set including a variadic list of components.
+func (s *BufferSet) With(names ...string) *BufferSet {
+	newSet := &BufferSet{
+		specs: map[string]bufferSpec{},
+	}
+	nameMap := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		nameMap[n] = struct{}{}
+	}
+	for k, v := range s.specs {
+		if _, exists := nameMap[k]; exists {
+			newSet.specs[k] = v
+		}
+	}
+	return newSet
 }

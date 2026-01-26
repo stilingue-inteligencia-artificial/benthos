@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service_test
 
 import (
@@ -14,9 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func walkForSummaries(fn func(func(name string, config *service.ConfigView))) map[string]string {
@@ -145,10 +147,10 @@ logger:
 	require.NoError(t, err)
 
 	go func() {
-		require.NoError(t, strm.Run(context.Background()))
+		require.NoError(t, strm.Run(t.Context()))
 	}()
 
-	require.NoError(t, pFn(context.Background(), service.NewMessage([]byte("hello world"))))
+	require.NoError(t, pFn(t.Context(), service.NewMessage([]byte("hello world"))))
 
 	require.NoError(t, strm.StopWithin(time.Second))
 	assert.Equal(t, []string{"meow"}, received)
@@ -211,7 +213,7 @@ output:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 
 	outBytes, err := os.ReadFile(outFilePath)
 	require.NoError(t, err)

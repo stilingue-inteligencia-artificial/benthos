@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -5,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/httpclient"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/httpclient"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func httpClientOutputSpec() *service.ConfigSpec {
@@ -16,25 +16,25 @@ func httpClientOutputSpec() *service.ConfigSpec {
 		Stable().
 		Categories("Network").
 		Summary("Sends messages to an HTTP server.").
-		Description(output.Description(true, true, `
-When the number of retries expires the output will reject the message, the behaviour after this will depend on the pipeline but usually this simply means the send is attempted again until successful whilst applying back pressure.
+		Description(`
+When the number of retries expires the output will reject the message, the behavior after this will depend on the pipeline but usually this simply means the send is attempted again until successful whilst applying back pressure.
 
-The URL and header values of this type can be dynamically set using function interpolations described [here](/docs/configuration/interpolation#bloblang-queries).
+The URL and header values of this type can be dynamically set using function interpolations described in xref:configuration:interpolation.adoc#bloblang-queries[Bloblang queries].
 
-The body of the HTTP request is the raw contents of the message payload. If the message has multiple parts (is a batch) the request will be sent according to [RFC1341](https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html). This behaviour can be disabled by setting the field `+"[`batch_as_multipart`](#batch_as_multipart) to `false`"+`.
+The body of the HTTP request is the raw contents of the message payload. If the message has multiple parts (is a batch) the request will be sent according to https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html[RFC1341^]. This behavior can be disabled by setting the field ` + "<<batch_as_multipart, `batch_as_multipart`>> to `false`" + `.
 
-### Propagating Responses
+== Propagate responses
 
-It's possible to propagate the response from each HTTP request back to the input source by setting `+"`propagate_response` to `true`"+`. Only inputs that support [synchronous responses](/docs/guides/sync_responses) are able to make use of these propagated responses.`)).
+It's possible to propagate the response from each HTTP request back to the input source by setting ` + "`propagate_response` to `true`" + `. Only inputs that support xref:guides:sync_responses.adoc[synchronous responses] are able to make use of these propagated responses.` + service.OutputPerformanceDocs(true, true)).
 		Field(httpclient.ConfigField("POST", true,
 			service.NewBoolField("batch_as_multipart").
-				Description("Send message batches as a single request using [RFC1341](https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html). If disabled messages in batches will be sent as individual requests.").
+				Description("Send message batches as a single request using https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html[RFC1341^]. If disabled messages in batches will be sent as individual requests.").
 				Advanced().Default(false),
 			service.NewBoolField("parallel").
 				Description("When processing batched messages and `batch_as_multipart` is false, whether to send messages of the batch in parallel, otherwise they are sent serially.").
 				Advanced().Default(false),
 			service.NewBoolField("propagate_response").
-				Description("Whether responses from the server should be [propagated back](/docs/guides/sync_responses) to the input.").
+				Description("Whether responses from the server should be xref:guides:sync_responses.adoc[propagated back] to the input.").
 				Advanced().Default(false),
 			service.NewIntField("max_in_flight").
 				Description("The maximum number of parallel message batches to have in flight at any given time.").
@@ -53,13 +53,13 @@ It's possible to propagate the response from each HTTP request back to the input
 					Description("The body of the individual message part.").
 					Example(`${! this.data.part1 }`).
 					Default(""),
-			).Description("EXPERIMENTAL: Create explicit multipart HTTP requests by specifying an array of parts to add to the request, each part specified consists of content headers and a data field that can be populated dynamically. If this field is populated it will override the default request creation behaviour.").
+			).Description("EXPERIMENTAL: Create explicit multipart HTTP requests by specifying an array of parts to add to the request, each part specified consists of content headers and a data field that can be populated dynamically. If this field is populated it will override the default request creation behavior.").
 				Advanced().Version("3.63.0").Default([]any{}),
 		))
 }
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"http_client", httpClientOutputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (bo service.BatchOutput, b service.BatchPolicy, mIF int, err error) {
 			if mIF, err = conf.FieldInt("max_in_flight"); err != nil {
@@ -73,9 +73,6 @@ func init() {
 			bo, err = newHTTPClientOutputFromParsed(conf, mgr)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type httpClientWriter struct {
@@ -157,7 +154,6 @@ func (h *httpClientWriter) WriteBatch(ctx context.Context, msg service.MessageBa
 					return err
 				}
 			}
-			return nil
 		} else {
 			// Hard, need to do parallel requests limited by max parallelism.
 			return h.handleParallelRequests(msg)
@@ -195,7 +191,7 @@ func (h *httpClientWriter) WriteBatch(ctx context.Context, msg service.MessageBa
 func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) error {
 	reqChan, resChan := make(chan int), make(chan error)
 
-	for i := 0; i < len(msg); i++ {
+	for range msg {
 		go func() {
 			for index := range reqChan {
 				tmpMsg := service.MessageBatch{msg[index]}
@@ -211,7 +207,7 @@ func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) erro
 						return nil
 					})
 				} else {
-					var hErr component.ErrUnexpectedHTTPRes
+					var hErr httpclient.ErrUnexpectedHTTPRes
 					if ok := errors.As(err, &hErr); ok {
 						msg[index].MetaSetMut("http_status_code", hErr.Code)
 					}
@@ -222,13 +218,13 @@ func (h *httpClientWriter) handleParallelRequests(msg service.MessageBatch) erro
 		}()
 	}
 	go func() {
-		for i := 0; i < len(msg); i++ {
+		for i := range msg {
 			reqChan <- i
 		}
 	}()
 
 	errored := false
-	for i := 0; i < len(msg); i++ {
+	for range msg {
 		if err := <-resChan; err != nil {
 			h.log.Errorf("HTTP parallel request to '%v' failed: %v", h.logURL, err)
 			errored = true

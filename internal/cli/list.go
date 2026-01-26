@@ -1,60 +1,85 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package cli
 
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/urfave/cli/v2"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
-	"github.com/benthosdev/benthos/v4/internal/config/schema"
-	"github.com/benthosdev/benthos/v4/internal/cuegen"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/cli/common"
+	"github.com/redpanda-data/benthos/v4/internal/config/schema"
+	"github.com/redpanda-data/benthos/v4/internal/cuegen"
+	"github.com/redpanda-data/benthos/v4/internal/jsonschema"
 )
 
-func listCliCommand() *cli.Command {
+func listCliCommand(opts *common.CLIOpts) *cli.Command {
+	flags := []cli.Flag{
+		&cli.StringFlag{
+			Name:  "format",
+			Value: "text",
+			Usage: "Print the component list in a specific format. Options are text, json, jsonschema, or cue.",
+		},
+		&cli.StringFlag{
+			Name:  "status",
+			Value: "",
+			Usage: "Filter the component list to only those matching the given status. Options are stable, beta or experimental.",
+		},
+
+		// Template imports
+		&cli.StringSliceFlag{
+			Name:    common.RootFlagTemplates,
+			Aliases: []string{"t"},
+			Usage:   opts.ExecTemplate("EXPERIMENTAL: import {{.ProductName}} templates, supports glob patterns (requires quotes)"),
+		},
+	}
+
 	return &cli.Command{
 		Name:  "list",
-		Usage: "List all Benthos component types",
-		Description: `
+		Flags: flags,
+		Usage: opts.ExecTemplate("List all {{.ProductName}} component types"),
+		Description: opts.ExecTemplate(`
 If any component types are explicitly listed then only types of those
 components will be shown.
 
-  benthos list
-  benthos list --format json inputs output
-  benthos list rate-limits buffers`[1:],
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:  "format",
-				Value: "text",
-				Usage: "Print the component list in a specific format. Options are text, json or cue.",
-			},
-			&cli.StringFlag{
-				Name:  "status",
-				Value: "",
-				Usage: "Filter the component list to only those matching the given status. Options are stable, beta or experimental.",
-			},
+  {{.BinaryName}} list
+  {{.BinaryName}} list --format json inputs output
+  {{.BinaryName}} list rate-limits buffers
+
+When using --format jsonschema with bloblang-functions or bloblang-methods,
+you can optionally specify function or method names to retrieve metadata for
+only those specific items:
+
+  {{.BinaryName}} list --format jsonschema bloblang-functions
+  {{.BinaryName}} list --format jsonschema bloblang-functions uuid_v4
+  {{.BinaryName}} list --format jsonschema bloblang-functions uuid_v4 nanoid
+  {{.BinaryName}} list --format jsonschema bloblang-methods uppercase catch`)[1:],
+		Before: func(c *cli.Context) error {
+			return common.PreApplyEnvFilesAndTemplates(c, opts)
 		},
 		Action: func(c *cli.Context) error {
-			listComponents(c)
-			os.Exit(0)
+			listComponents(c, opts)
 			return nil
 		},
 	}
 }
 
-func listComponents(c *cli.Context) {
+func listComponents(c *cli.Context, opts *common.CLIOpts) {
 	ofTypes := map[string]struct{}{}
 	for _, k := range c.Args().Slice() {
 		ofTypes[k] = struct{}{}
 	}
 
-	schema := schema.New(Version, DateBuilt)
+	schema := schema.New(opts.Version, opts.DateBuilt, opts.Environment, opts.BloblEnvironment)
 	if status := c.String("status"); status != "" {
 		schema.ReduceToStatus(status)
 	}
+	schema.Config = opts.MainConfigSpecCtor()
 
 	switch c.String("format") {
 	case "text":
@@ -77,13 +102,13 @@ func listComponents(c *cli.Context) {
 				continue
 			}
 			if i > 0 {
-				fmt.Println("")
+				fmt.Fprintln(opts.Stdout, "")
 			}
 			i++
 			title := cases.Title(language.English).String(strings.ReplaceAll(k, "-", " "))
-			fmt.Printf("%v:\n", title)
+			fmt.Fprintf(opts.Stdout, "%v:\n", title)
 			for _, t := range flat[k] {
-				fmt.Printf("  - %v\n", t)
+				fmt.Fprintf(opts.Stdout, "  - %v\n", t)
 			}
 		}
 	case "json":
@@ -99,25 +124,76 @@ func listComponents(c *cli.Context) {
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(string(jsonBytes))
+		fmt.Fprintln(opts.Stdout, string(jsonBytes))
 	case "json-full":
 		jsonBytes, err := json.Marshal(schema)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(string(jsonBytes))
+		fmt.Fprintln(opts.Stdout, string(jsonBytes))
 	case "json-full-scrubbed":
 		schema.Scrub()
 		jsonBytes, err := json.Marshal(schema)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(string(jsonBytes))
+		fmt.Fprintln(opts.Stdout, string(jsonBytes))
+	case "jsonschema":
+		// Special handling for bloblang functions and methods
+		if _, isFunctions := ofTypes["bloblang-functions"]; isFunctions {
+			functions := schema.BloblangFunctions
+
+			// Filter by specific function names if provided
+			if len(ofTypes) > 1 {
+				filtered := []query.FunctionSpec{}
+				for _, fn := range functions {
+					if _, requested := ofTypes[fn.Name]; requested {
+						filtered = append(filtered, fn)
+					}
+				}
+				functions = filtered
+			}
+
+			outputBloblangJSON(opts, "bloblang-functions", functions)
+			return
+		}
+		if _, isMethods := ofTypes["bloblang-methods"]; isMethods {
+			methods := schema.BloblangMethods
+
+			// Filter by specific method names if provided
+			if len(ofTypes) > 1 {
+				filtered := []query.MethodSpec{}
+				for _, method := range methods {
+					if _, requested := ofTypes[method.Name]; requested {
+						filtered = append(filtered, method)
+					}
+				}
+				methods = filtered
+			}
+
+			outputBloblangJSON(opts, "bloblang-methods", methods)
+			return
+		}
+
+		// Default: Component jsonschema
+		jsonSchemaBytes, err := jsonschema.Marshal(schema.Config, opts.Environment)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintln(opts.Stdout, string(jsonSchemaBytes))
 	case "cue":
 		source, err := cuegen.GenerateSchema(schema)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println(string(source))
+		fmt.Fprintln(opts.Stdout, string(source))
 	}
+}
+
+func outputBloblangJSON(opts *common.CLIOpts, key string, data any) {
+	jsonBytes, err := json.Marshal(map[string]any{key: data})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintln(opts.Stdout, string(jsonBytes))
 }

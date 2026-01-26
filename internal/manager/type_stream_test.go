@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager_test
 
 import (
@@ -5,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
-	"github.com/benthosdev/benthos/v4/public/service"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,7 +76,7 @@ output_resources:
 			strm, err := builder.Build()
 			require.NoError(t, err)
 
-			cancelledCtx, done := context.WithCancel(context.Background())
+			cancelledCtx, done := context.WithCancel(t.Context())
 			done()
 
 			assert.Equal(t, cancelledCtx.Err(), strm.Run(cancelledCtx))

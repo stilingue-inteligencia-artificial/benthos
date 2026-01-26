@@ -1,21 +1,25 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package template
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 
 	"github.com/fatih/color"
 	"github.com/nsf/jsondiff"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/parser"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/parser"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 )
 
 // FieldConfig describes a configuration field used in the template.
@@ -26,11 +30,13 @@ type FieldConfig struct {
 	Kind        *string `yaml:"kind,omitempty"`
 	Default     *any    `yaml:"default,omitempty"`
 	Advanced    bool    `yaml:"advanced"`
+	Options     any     `yaml:"options,omitempty"`
 }
 
 // TestConfig defines a unit test for the template.
 type TestConfig struct {
 	Name     string    `yaml:"name"`
+	Label    string    `yaml:"label"`
 	Config   yaml.Node `yaml:"config"`
 	Expected yaml.Node `yaml:"expected,omitempty"`
 }
@@ -59,7 +65,64 @@ func (c FieldConfig) FieldSpec() (docs.FieldSpec, error) {
 	if c.Type == nil {
 		return f, errors.New("missing type field")
 	}
-	f = f.HasType(docs.FieldType(*c.Type))
+
+	switch *c.Type {
+	case "bloblang":
+		f = f.HasType(docs.FieldTypeString).IsBloblang()
+	case "string_enum":
+		options, ok := c.Options.([]any)
+		if !ok {
+			return f, fmt.Errorf("expected options to be an array, got: %T", c.Options)
+		}
+
+		if len(options) == 0 {
+			return f, errors.New("at least one option must be provided")
+		}
+
+		var optionStrings []string
+		for _, o := range options {
+			option, ok := o.(string)
+			if !ok {
+				return f, errors.New("only string options are allowed")
+			}
+			optionStrings = append(optionStrings, option)
+		}
+
+		slices.Sort(optionStrings)
+		if uniqOpts := slices.Compact(optionStrings); len(uniqOpts) != len(optionStrings) {
+			return f, errors.New("duplicate options are not allowed")
+		}
+
+		f = f.HasType(docs.FieldTypeString).HasOptions(optionStrings...)
+	case "string_annotated_enum":
+		options, ok := c.Options.(map[string]any)
+		if !ok {
+			return f, fmt.Errorf("expected options to be an object, got: %T", c.Options)
+		}
+		if len(options) == 0 {
+			return f, errors.New("at least one annotated option must be provided")
+		}
+
+		optionKeys := make([]string, 0, len(options))
+		for key := range options {
+			optionKeys = append(optionKeys, key)
+		}
+		sort.Strings(optionKeys)
+
+		flatOptions := make([]string, 0, len(options)*2)
+		for _, opt := range optionKeys {
+			annotation, ok := options[opt].(string)
+			if !ok {
+				return f, fmt.Errorf("expected the annotation for option %q to be a string, got: %T", opt, options[opt])
+			}
+			flatOptions = append(flatOptions, opt, annotation)
+		}
+
+		f = f.HasType(docs.FieldTypeString).HasAnnotatedOptions(flatOptions...)
+	default:
+		f = f.HasType(docs.FieldType(*c.Type))
+	}
+
 	if c.Kind != nil {
 		switch *c.Kind {
 		case "map":
@@ -68,9 +131,10 @@ func (c FieldConfig) FieldSpec() (docs.FieldSpec, error) {
 			f = f.Array()
 		case "scalar":
 		default:
-			return f, fmt.Errorf("unrecognised scalar type: %v", *c.Kind)
+			return f, fmt.Errorf("unrecognised kind: %v", *c.Kind)
 		}
 	}
+
 	return f, nil
 }
 
@@ -102,12 +166,12 @@ func (c Config) ComponentSpec() (docs.ComponentSpec, error) {
 	}, nil
 }
 
-func (c Config) compile() (*compiled, error) {
+func (c Config) compile(env *bloblang.Environment) (*compiled, error) {
 	spec, err := c.ComponentSpec()
 	if err != nil {
 		return nil, err
 	}
-	mapping, err := bloblang.GlobalEnvironment().NewMapping(c.Mapping)
+	mapping, err := env.NewMapping(c.Mapping)
 	if err != nil {
 		var perr *parser.Error
 		if errors.As(err, &perr) {
@@ -149,22 +213,22 @@ func diffYAMLNodesAsJSON(expNode *yaml.Node, actNode any) (string, error) {
 
 // Test ensures that the template compiles, and executes any unit test
 // definitions within the config.
-func (c Config) Test() ([]string, error) {
-	compiled, err := c.compile()
+func (c Config) Test(env *bundle.Environment, benv *bloblang.Environment) ([]string, error) {
+	compiled, err := c.compile(benv)
 	if err != nil {
 		return nil, err
 	}
 
 	var failures []string
 	for _, test := range c.Tests {
-		outConf, err := compiled.Render(&test.Config)
+		outConf, err := compiled.Render(&test.Config, test.Label)
 		if err != nil {
 			return nil, fmt.Errorf("test '%v': %w", test.Name, err)
 		}
 
 		var yNode yaml.Node
 		if err := yNode.Encode(outConf); err == nil {
-			for _, lint := range docs.LintYAML(docs.NewLintContext(docs.NewLintConfig(bundle.GlobalEnvironment)), docs.Type(c.Type), &yNode) {
+			for _, lint := range docs.LintYAML(docs.NewLintContext(docs.NewLintConfig(env)), docs.Type(c.Type), &yNode) {
 				failures = append(failures, fmt.Sprintf("test '%v': lint error in resulting config: %v", test.Name, lint.Error()))
 			}
 		} else {
@@ -186,7 +250,7 @@ func (c Config) Test() ([]string, error) {
 
 // ReadConfigYAML attempts to read a YAML byte slice as a template configuration
 // file.
-func ReadConfigYAML(templateBytes []byte) (conf Config, lints []docs.Lint, err error) {
+func ReadConfigYAML(env *bundle.Environment, templateBytes []byte) (conf Config, lints []docs.Lint, err error) {
 	if err = yaml.Unmarshal(templateBytes, &conf); err != nil {
 		return
 	}
@@ -196,17 +260,17 @@ func ReadConfigYAML(templateBytes []byte) (conf Config, lints []docs.Lint, err e
 		return
 	}
 
-	lints = ConfigSpec().LintYAML(docs.NewLintContext(docs.NewLintConfig(bundle.GlobalEnvironment)), &node)
+	lints = ConfigSpec().LintYAML(docs.NewLintContext(docs.NewLintConfig(env)), &node)
 	return
 }
 
 // ReadConfigFile attempts to read a template configuration file.
-func ReadConfigFile(path string) (conf Config, lints []docs.Lint, err error) {
+func ReadConfigFile(env *bundle.Environment, path string) (conf Config, lints []docs.Lint, err error) {
 	var templateBytes []byte
 	if templateBytes, err = ifs.ReadFile(ifs.OS(), path); err != nil {
 		return
 	}
-	return ReadConfigYAML(templateBytes)
+	return ReadConfigYAML(env, templateBytes)
 }
 
 //------------------------------------------------------------------------------
@@ -218,9 +282,12 @@ func FieldConfigSpec() docs.FieldSpecs {
 		docs.FieldString("description", "A description of the field.").HasDefault(""),
 		docs.FieldString("type", "The scalar type of the field.").HasAnnotatedOptions(
 			"string", "standard string type",
+			"string_enum", "string type which can have one of a discrete list of values",
+			"string_annotated_enum", "string type which can have one of a discrete list of values, where each value must be accompanied by a description that annotates its behaviour in the documentation",
 			"int", "standard integer type",
 			"float", "standard float type",
-			"bool", "a boolean true/false",
+			"bool", "standard boolean type",
+			"bloblang", "bloblang mapping",
 			"unknown", "allows for nesting arbitrary configuration inside of a field",
 		),
 		docs.FieldString("kind", "The kind of the field.").HasOptions(
@@ -228,6 +295,7 @@ func FieldConfigSpec() docs.FieldSpecs {
 		).HasDefault("scalar"),
 		docs.FieldAnything("default", "An optional default value for the field. If a default value is not specified then a configuration without the field is considered incorrect.").Optional(),
 		docs.FieldBool("advanced", "Whether this field is considered advanced.").HasDefault(false),
+		docs.FieldAnything("options", "List of options for `string_enum` fields or map of annotated options for `string_annotated_enum` fields").Optional(),
 	}
 }
 
@@ -249,26 +317,28 @@ func ConfigSpec() docs.FieldSpecs {
 			"cache", "input", "output", "processor", "rate_limit",
 		),
 		docs.FieldString(
-			"status", "The stability of the template describing the likelihood that the configuration spec of the template, or it's behaviour, will change.",
+			"status", "The stability of the template describing the likelihood that the configuration spec of the template, or it's behavior, will change.",
 		).HasAnnotatedOptions(
 			"stable", "This template is stable and will therefore not change in a breaking way outside of major version releases.",
 			"beta", "This template is beta and will therefore not change in a breaking way unless a major problem is found.",
 			"experimental", "This template is experimental and therefore subject to breaking changes outside of major version releases.",
+			"deprecated", "This template has been deprecated and should no longer be used.",
 		).HasDefault("stable"),
 		docs.FieldString(
 			"categories", "An optional list of tags, which are used for arbitrarily grouping components in documentation.",
 		).Array().HasDefault([]any{}),
 		docs.FieldString("summary", "A short summary of the component.").HasDefault(""),
 		docs.FieldString("description", "A longer form description of the component and how to use it.").HasDefault(""),
-		docs.FieldObject("fields", "The configuration fields of the template, fields specified here will be parsed from a Benthos config and will be accessible from the template mapping.").Array().WithChildren(FieldConfigSpec()...),
+		docs.FieldObject("fields", "The configuration fields of the template, fields specified here will be parsed from a Redpanda Connect config and will be accessible from the template mapping.").Array().WithChildren(FieldConfigSpec()...),
 		docs.FieldBloblang(
-			"mapping", "A [Bloblang](/docs/guides/bloblang/about) mapping that translates the fields of the template into a valid Benthos configuration for the target component type.",
+			"mapping", "A xref:guides:bloblang/about.adoc[Bloblang] mapping that translates the fields of the template into a valid Redpanda Connect configuration for the target component type.",
 		),
 		templateMetricsMappingDocs(),
 		docs.FieldObject(
-			"tests", "Optional unit test definitions for the template that verify certain configurations produce valid configs. These tests are executed with the command `benthos template lint`.",
+			"tests", "Optional unit test definitions for the template that verify certain configurations produce valid configs. These tests are executed with the command `rpk connect template lint`.",
 		).Array().WithChildren(
 			docs.FieldString("name", "A name to identify the test."),
+			docs.FieldString("label", "A label to assign to this template when running the test.").HasDefault(""),
 			docs.FieldObject("config", "A configuration to run this test with, the config resulting from applying the template with this config will be linted."),
 			docs.FieldObject("expected", "An optional configuration describing the expected result of applying the template, when specified the result will be diffed and any mismatching fields will be reported as a test error.").Optional(),
 		).HasDefault([]any{}),

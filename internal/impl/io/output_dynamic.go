@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -7,13 +9,13 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/api"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/impl/pure"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/api"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/impl/pure"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -28,25 +30,25 @@ func dynOutputSpec() *service.ConfigSpec {
 		Summary(`A special broker type where the outputs are identified by unique labels and can be created, changed and removed during runtime via a REST API.`).
 		Description(`The broker pattern used is always `+"`fan_out`"+`, meaning each message will be delivered to each dynamic output.`).
 		Footnotes(`
-## Endpoints
+== Endpoints
 
-### GET `+"`/outputs`"+`
+=== GET `+"`/outputs`"+`
 
 Returns a JSON object detailing all dynamic outputs, providing information such as their current uptime and configuration.
 
-### GET `+"`/outputs/{id}`"+`
+=== GET `+"`/outputs/\\{id}`"+`
 
 Returns the configuration of an output.
 
-### POST `+"`/outputs/{id}`"+`
+=== POST `+"`/outputs/\\{id}`"+`
 
 Creates or updates an output with a configuration provided in the request body (in YAML or JSON format).
 
-### DELETE `+"`/outputs/{id}`"+`
+=== DELETE `+"`/outputs/\\{id}`"+`
 
 Stops and removes an output.
 
-### GET `+"`/outputs/{id}/uptime`"+`
+=== GET `+"`/outputs/\\{id}/uptime`"+`
 
 Returns the uptime of an output as a duration string (of the form "72h3m0.5s").`).
 		Fields(
@@ -60,7 +62,7 @@ Returns the uptime of an output as a duration string (of the form "72h3m0.5s").`
 }
 
 func init() {
-	err := service.RegisterBatchOutput("dynamic", dynOutputSpec(),
+	service.MustRegisterBatchOutput("dynamic", dynOutputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			maxInFlight = 1
 
@@ -72,9 +74,6 @@ func init() {
 			out = interop.NewUnwrapInternalOutput(o)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func newDynamicOutputFromParsed(conf *service.ParsedConfig, res *service.Resources) (output.Streamed, error) {

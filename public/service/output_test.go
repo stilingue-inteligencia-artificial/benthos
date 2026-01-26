@@ -1,15 +1,21 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"context"
 	"errors"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type fnOutput struct {
@@ -33,9 +39,9 @@ func (f *fnOutput) Close(ctx context.Context) error {
 
 func TestOutputAirGapShutdown(t *testing.T) {
 	o := &fnOutput{}
-	agi := newAirGapWriter(o)
+	agi := newAirGapWriter(mock.NewManager(), o)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	assert.NoError(t, agi.Close(ctx))
@@ -51,19 +57,19 @@ func TestOutputAirGapSad(t *testing.T) {
 			return errors.New("bad read")
 		},
 	}
-	agi := newAirGapWriter(o)
+	agi := newAirGapWriter(mock.NewManager(), o)
 
-	err := agi.Connect(context.Background())
+	err := agi.Connect(t.Context())
 	assert.EqualError(t, err, "bad connect")
 
-	err = agi.WriteBatch(context.Background(), message.QuickBatch(nil))
+	err = agi.WriteBatch(t.Context(), message.QuickBatch(nil))
 	assert.EqualError(t, err, "bad read")
 
 	o.write = func(m *Message) error {
 		return ErrNotConnected
 	}
 
-	err = agi.WriteBatch(context.Background(), message.QuickBatch(nil))
+	err = agi.WriteBatch(t.Context(), message.QuickBatch(nil))
 	assert.Equal(t, component.ErrNotConnected, err)
 }
 
@@ -79,14 +85,14 @@ func TestOutputAirGapHappy(t *testing.T) {
 			return nil
 		},
 	}
-	agi := newAirGapWriter(o)
+	agi := newAirGapWriter(mock.NewManager(), o)
 
-	err := agi.Connect(context.Background())
+	err := agi.Connect(t.Context())
 	assert.NoError(t, err)
 
 	inMsg := message.QuickBatch([][]byte{[]byte("hello world")})
 
-	err = agi.WriteBatch(context.Background(), inMsg)
+	err = agi.WriteBatch(t.Context(), inMsg)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "hello world", wroteMsg)
@@ -113,9 +119,9 @@ func (f *fnBatchOutput) Close(ctx context.Context) error {
 
 func TestBatchOutputAirGapShutdown(t *testing.T) {
 	o := &fnBatchOutput{}
-	agi := newAirGapBatchWriter(o)
+	agi := newAirGapBatchWriter(mock.NewManager(), o)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	assert.NoError(t, agi.Close(ctx))
@@ -131,19 +137,19 @@ func TestBatchOutputAirGapSad(t *testing.T) {
 			return errors.New("bad read")
 		},
 	}
-	agi := newAirGapBatchWriter(o)
+	agi := newAirGapBatchWriter(mock.NewManager(), o)
 
-	err := agi.Connect(context.Background())
+	err := agi.Connect(t.Context())
 	assert.EqualError(t, err, "bad connect")
 
-	err = agi.WriteBatch(context.Background(), message.QuickBatch(nil))
+	err = agi.WriteBatch(t.Context(), message.QuickBatch(nil))
 	assert.EqualError(t, err, "bad read")
 
 	o.writeBatch = func(m MessageBatch) error {
 		return ErrNotConnected
 	}
 
-	err = agi.WriteBatch(context.Background(), message.QuickBatch(nil))
+	err = agi.WriteBatch(t.Context(), message.QuickBatch(nil))
 	assert.Equal(t, component.ErrNotConnected, err)
 }
 
@@ -159,15 +165,147 @@ func TestBatchOutputAirGapHappy(t *testing.T) {
 			return nil
 		},
 	}
-	agi := newAirGapBatchWriter(o)
+	agi := newAirGapBatchWriter(mock.NewManager(), o)
 
-	err := agi.Connect(context.Background())
+	err := agi.Connect(t.Context())
 	assert.NoError(t, err)
 
 	inMsg := message.QuickBatch([][]byte{[]byte("hello world")})
 
-	err = agi.WriteBatch(context.Background(), inMsg)
+	err = agi.WriteBatch(t.Context(), inMsg)
 	assert.NoError(t, err)
 
 	assert.Equal(t, "hello world", wroteMsg)
+}
+
+func TestOutputOwnedNonBlockingNonBuffered(t *testing.T) {
+	bChan := make(chan struct{})
+
+	var received []string
+	var mut sync.Mutex
+
+	o := &fnBatchOutput{
+		connect: func() error {
+			return nil
+		},
+		writeBatch: func(b MessageBatch) error {
+			<-bChan
+			mut.Lock()
+			defer mut.Unlock()
+			for _, m := range b {
+				mBytes, _ := m.AsBytes()
+				received = append(received, string(mBytes))
+			}
+			return nil
+		},
+	}
+
+	mo, err := MockResources().ManagedBatchOutput("foo", 1, o)
+	require.NoError(t, err)
+
+	require.NoError(t, mo.Prime())
+
+	assert.Eventually(t, func() bool {
+		tmpErr := mo.WriteBatchNonBlocking(MessageBatch{
+			NewMessage([]byte("first")),
+		}, func(ctx context.Context, err error) error {
+			return nil
+		})
+		return tmpErr == nil
+	}, time.Second, time.Millisecond*10)
+
+	for i := 0; i < 3; i++ {
+		require.Error(t, mo.WriteBatchNonBlocking(MessageBatch{
+			NewMessage([]byte("first")),
+		}, func(ctx context.Context, err error) error {
+			return nil
+		}))
+	}
+
+	close(bChan)
+
+	assert.Eventually(t, func() bool {
+		tmpErr := mo.WriteBatchNonBlocking(MessageBatch{
+			NewMessage([]byte("second")),
+		}, func(ctx context.Context, err error) error {
+			return nil
+		})
+		return tmpErr == nil
+	}, time.Second, time.Millisecond*10)
+
+	assert.Eventually(t, func() bool {
+		mut.Lock()
+		l := len(received)
+		mut.Unlock()
+		return l == 2
+	}, time.Second, time.Millisecond*50)
+
+	assert.Equal(t, []string{"first", "second"}, received)
+}
+
+func TestOutputOwnedNonBlockingBuffered(t *testing.T) {
+	bChan := make(chan struct{})
+
+	var received []string
+	var mut sync.Mutex
+
+	o := &fnBatchOutput{
+		connect: func() error {
+			return nil
+		},
+		writeBatch: func(b MessageBatch) error {
+			<-bChan
+			mut.Lock()
+			defer mut.Unlock()
+			for _, m := range b {
+				mBytes, _ := m.AsBytes()
+				received = append(received, string(mBytes))
+			}
+			return nil
+		},
+	}
+
+	mo, err := MockResources().ManagedBatchOutput("foo", 1, o)
+	require.NoError(t, err)
+
+	require.NoError(t, mo.PrimeBuffered(5))
+
+	for i := 0; i < 6; i++ {
+		assert.Eventually(t, func() bool {
+			tmpErr := mo.WriteBatchNonBlocking(MessageBatch{
+				NewMessage(strconv.AppendInt(nil, int64(i), 10)),
+			}, func(ctx context.Context, err error) error {
+				return nil
+			})
+			return tmpErr == nil
+		}, time.Second, time.Millisecond*10)
+	}
+
+	for i := 0; i < 3; i++ {
+		require.Error(t, mo.WriteBatchNonBlocking(MessageBatch{
+			NewMessage([]byte("another")),
+		}, func(ctx context.Context, err error) error {
+			return nil
+		}))
+	}
+
+	close(bChan)
+
+	assert.Eventually(t, func() bool {
+		tmpErr := mo.WriteBatchNonBlocking(MessageBatch{
+			NewMessage([]byte("last message")),
+		}, func(ctx context.Context, err error) error {
+			return nil
+		})
+		return tmpErr == nil
+	}, time.Second, time.Millisecond*10)
+
+	assert.Eventually(t, func() bool {
+		mut.Lock()
+		l := len(received)
+		mut.Unlock()
+		return l == 7
+	}, time.Second, time.Millisecond*50)
+
+	assert.Equal(t, []string{"0", "1", "2", "3", "4", "5", "last message"}, received)
 }

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
@@ -9,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var linebreakStr = `foo
@@ -115,11 +117,21 @@ func TestMethods(t *testing.T) {
 				jsonFn(`{"doc":{"foo":"bar"}}`),
 				method("format_json", ""),
 			),
-			output: []byte(`{
-"doc": {
-"foo": "bar"
-}
-}`),
+			output: []byte(`{"doc":{"foo":"bar"}}`),
+		},
+		"check format_json with escaping problematic HTML characters": {
+			input: methods(
+				jsonFn(`{"doc":{"email":"foo&bar@benthos.dev","name":"foo>bar"}}`),
+				method("format_json", ""),
+			),
+			output: []byte(`{"doc":{"email":"foo\u0026bar@benthos.dev","name":"foo\u003ebar"}}`),
+		},
+		"check format_json without escaping problematic HTML characters": {
+			input: methods(
+				jsonFn(`{"doc":{"email":"foo&bar@benthos.dev","name":"foo>bar"}}`),
+				method("format_json", "", true, false),
+			),
+			output: []byte(`{"doc":{"email":"foo&bar@benthos.dev","name":"foo>bar"}}`),
 		},
 		"check format_yaml": {
 			input: methods(
@@ -492,6 +504,34 @@ func TestMethods(t *testing.T) {
 			),
 			output: false,
 		},
+		"check array": {
+			input: methods(
+				literalFn([]any{1}),
+				method("array"),
+			),
+			output: []any{1},
+		},
+		"check array 2": {
+			input: methods(
+				literalFn(1),
+				method("array"),
+			),
+			output: []any{1},
+		},
+		"check array 3": {
+			input: methods(
+				literalFn(nil),
+				method("array"),
+			),
+			output: []any{nil},
+		},
+		"check array 4": {
+			input: methods(
+				literalFn([]any{}),
+				method("array"),
+			),
+			output: []any{},
+		},
 		"check bool": {
 			input: methods(
 				literalFn("true"),
@@ -835,6 +875,63 @@ func TestMethods(t *testing.T) {
 			),
 			err: `string literal: unsupported crc32 hash key "not-supported"`,
 		},
+		"check fnv32 hash": {
+			input: methods(
+				literalFn("hello world"),
+				method("hash", "fnv32"),
+				method("string"),
+			),
+			output: "1418570095",
+		},
+		"check uuid_v5 dns": {
+			input: methods(
+				literalFn("hello world"),
+				method("uuid_v5", "dns"),
+			),
+			output: "823a2f73-a936-56c3-b8b4-03641bd74f35",
+		},
+		"check uuid_v5 url": {
+			input: methods(
+				literalFn("hello world"),
+				method("uuid_v5", "url"),
+			),
+			output: "7b3d66ac-cb60-5154-8edf-0bcfd0c418b3",
+		},
+		"check uuid_v5 oid": {
+			input: methods(
+				literalFn("hello world"),
+				method("uuid_v5", "oid"),
+			),
+			output: "25024589-1a7c-5625-bdb2-81143473d4d3",
+		},
+		"check uuid_v5 x500": {
+			input: methods(
+				literalFn("hello world"),
+				method("uuid_v5", "x500"),
+			),
+			output: "dbd9b896-6d7c-5852-895c-ecc5735cf874",
+		},
+		"check uuid_v5 omit ns": {
+			input: methods(
+				literalFn("hello world"),
+				method("uuid_v5"),
+			),
+			output: "191333f6-c83e-5b3b-bdb0-bd483ad1bcb7",
+		},
+		"check uuid_v5 not valid ns": {
+			input: methods(
+				literalFn("hello world"),
+				method("uuid_v5", "not valid"),
+			),
+			err: `string literal: invalid ns uuid: "not valid"`,
+		},
+		"check uuid_v5 null input": {
+			input: methods(
+				literalFn(nil),
+				method("uuid_v5"),
+			),
+			output: nil,
+		},
 		"check hex encode": {
 			input: methods(
 				literalFn("hello world"),
@@ -951,23 +1048,6 @@ func TestMethods(t *testing.T) {
 				{content: `hello world`},
 			},
 			output: `68656c6c6f20776f726c64`,
-		},
-		"check strip html": {
-			input: methods(
-				literalFn("<p>the plain <strong>old text</strong></p>"),
-				method("strip_html"),
-			),
-			output: `the plain old text`,
-		},
-		"check strip html bytes": {
-			input: methods(
-				function("content"),
-				method("strip_html"),
-			),
-			messages: []easyMsg{
-				{content: `<p>the plain <strong>old text</strong></p>`},
-			},
-			output: []byte(`the plain old text`),
 		},
 		"check quote": {
 			input: methods(
@@ -1689,6 +1769,46 @@ func TestMethods(t *testing.T) {
 				method("string"),
 			),
 			output: `hello world!`,
+		},
+		"check aes-gcm encryption": {
+			input: methods(
+				methods(
+					literalFn("007c5e5b3e59df24a7c355584fc1518d"),
+					method("decode", "hex"),
+				),
+				method(
+					"encrypt_aes", "gcm",
+					methods(
+						literalFn("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"),
+						method("decode", "hex"),
+					),
+					methods(
+						literalFn("54cc7dc2c37ec006bcc6d1da"),
+						method("decode", "hex"),
+					),
+				),
+				method("encode", "hex"),
+			),
+			output: `d50b9e252b70945d4240d351677eb10f937cdaef6f2822b6a3191654ba41b197`,
+		},
+		"check aes-gcm decryption": {
+			input: methods(
+				literalFn("d50b9e252b70945d4240d351677eb10f937cdaef6f2822b6a3191654ba41b197"),
+				method("decode", "hex"),
+				method(
+					"decrypt_aes", "gcm",
+					methods(
+						literalFn("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"),
+						method("decode", "hex"),
+					),
+					methods(
+						literalFn("54cc7dc2c37ec006bcc6d1da"),
+						method("decode", "hex"),
+					),
+				),
+				method("encode", "hex"),
+			),
+			output: `007c5e5b3e59df24a7c355584fc1518d`,
 		},
 		"check aes-ofb encryption": {
 			input: methods(

@@ -1,10 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 // MethodCtor constructs a new method from a target function and input args.

@@ -1,14 +1,15 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"testing"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestResourceProc(t *testing.T) {
@@ -24,7 +25,7 @@ func TestResourceProc(t *testing.T) {
 	}
 
 	mgr.Processors["foo"] = func(b message.Batch) ([]message.Batch, error) {
-		msgs, res := resProc.ProcessBatch(context.Background(), b)
+		msgs, res := resProc.ProcessBatch(t.Context(), b)
 		if res != nil {
 			return nil, res
 		}
@@ -40,7 +41,7 @@ func TestResourceProc(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msgs, res := p.ProcessBatch(context.Background(), message.QuickBatch([][]byte{[]byte("bar")}))
+	msgs, res := p.ProcessBatch(t.Context(), message.QuickBatch([][]byte{[]byte("bar")}))
 	if res != nil {
 		t.Fatal(res)
 	}

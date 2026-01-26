@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"context"
 	"errors"
 	"sync/atomic"
 	"testing"
@@ -10,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestRetryHappy(t *testing.T) {
@@ -34,7 +35,7 @@ retry:
 	p, err := mockMgr.NewProcessor(conf)
 	require.NoError(t, err)
 
-	resBatches, err := p.ProcessBatch(context.Background(), message.Batch{
+	resBatches, err := p.ProcessBatch(t.Context(), message.Batch{
 		message.NewPart([]byte("hello world a")),
 		message.NewPart([]byte("hello world b")),
 		message.NewPart([]byte("hello world c")),
@@ -45,6 +46,14 @@ retry:
 
 	var resMsgs []string
 	for _, m := range resBatches[0] {
+		retryCount, ok := m.MetaGetMut("retry_count")
+		require.True(t, ok)
+		assert.Equal(t, 0, retryCount)
+
+		backoffDuration, ok := m.MetaGetMut("backoff_duration")
+		require.True(t, ok)
+		assert.Equal(t, backoffDuration, time.Duration(0).Nanoseconds())
+
 		resMsgs = append(resMsgs, string(m.AsBytes()))
 	}
 	assert.Equal(t, []string{
@@ -53,7 +62,7 @@ retry:
 		"hello world c updated",
 	}, resMsgs)
 
-	require.NoError(t, p.Close(context.Background()))
+	require.NoError(t, p.Close(t.Context()))
 }
 
 func TestRetryVerySad(t *testing.T) {
@@ -83,7 +92,7 @@ retry:
 	p, err := mockMgr.NewProcessor(conf)
 	require.NoError(t, err)
 
-	resBatches, err := p.ProcessBatch(context.Background(), message.Batch{
+	resBatches, err := p.ProcessBatch(t.Context(), message.Batch{
 		message.NewPart([]byte("hello world a")),
 		message.NewPart([]byte("hello world b")),
 		message.NewPart([]byte("hello world c")),
@@ -104,7 +113,7 @@ retry:
 
 	assert.Greater(t, fooCalls, uint32(6))
 
-	require.NoError(t, p.Close(context.Background()))
+	require.NoError(t, p.Close(t.Context()))
 }
 
 func TestRetryOneFailure(t *testing.T) {
@@ -134,7 +143,7 @@ retry:
 	p, err := mockMgr.NewProcessor(conf)
 	require.NoError(t, err)
 
-	resBatches, err := p.ProcessBatch(context.Background(), message.Batch{
+	resBatches, err := p.ProcessBatch(t.Context(), message.Batch{
 		message.NewPart([]byte("hello world a")),
 	})
 	require.NoError(t, err)
@@ -151,7 +160,59 @@ retry:
 
 	assert.Greater(t, fooCalls, uint32(1))
 
-	require.NoError(t, p.Close(context.Background()))
+	require.NoError(t, p.Close(t.Context()))
+}
+
+func TestRetryMaxRetriesFailure(t *testing.T) {
+	conf, err := testutil.ProcessorFromYAML(`
+retry:
+  max_retries: 2
+  processors:
+    - resource: foo
+`)
+	require.NoError(t, err)
+
+	mockMgr := mock.NewManager()
+
+	var fooCalls uint32
+	mockMgr.Processors["foo"] = func(b message.Batch) ([]message.Batch, error) {
+		b[0].SetBytes([]byte(string(b[0].AsBytes()) + " updated"))
+		atomic.AddUint32(&fooCalls, 1)
+		b[0].ErrorSet(errors.New("nope"))
+		return []message.Batch{
+			{b[0]},
+		}, nil
+	}
+
+	p, err := mockMgr.NewProcessor(conf)
+	require.NoError(t, err)
+
+	resBatches, err := p.ProcessBatch(t.Context(), message.Batch{
+		message.NewPart([]byte("hello world a")),
+	})
+	require.NoError(t, err)
+	require.Len(t, resBatches, 1)
+	require.Len(t, resBatches[0], 1)
+
+	var resMsgs []string
+	for _, m := range resBatches[0] {
+		retryCount, ok := m.MetaGetMut("retry_count")
+		require.True(t, ok)
+		assert.Equal(t, 2, retryCount)
+
+		backoffDuration, ok := m.MetaGetMut("backoff_duration")
+		require.True(t, ok)
+		assert.Greater(t, backoffDuration, time.Duration(0).Nanoseconds())
+
+		resMsgs = append(resMsgs, string(m.AsBytes()))
+	}
+	assert.Equal(t, []string{
+		"hello world a updated",
+	}, resMsgs)
+
+	assert.Equal(t, uint32(2), fooCalls)
+
+	require.NoError(t, p.Close(t.Context()))
 }
 
 func TestRetryParallelErrors(t *testing.T) {
@@ -194,7 +255,7 @@ retry:
 	require.NoError(t, err)
 
 	tBefore := time.Now()
-	resBatches, err := p.ProcessBatch(context.Background(), message.Batch{
+	resBatches, err := p.ProcessBatch(t.Context(), message.Batch{
 		message.NewPart([]byte("foo")),
 		message.NewPart([]byte("bar")),
 		message.NewPart([]byte("baz")),
@@ -220,5 +281,5 @@ retry:
 	assert.Equal(t, uint32(2), barCalls)
 	assert.Equal(t, uint32(2), bazCalls)
 
-	require.NoError(t, p.Close(context.Background()))
+	require.NoError(t, p.Close(t.Context()))
 }

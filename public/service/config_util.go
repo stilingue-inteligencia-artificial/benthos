@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 type fieldUnwrapper struct {

@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 // MatchCase represents a single match case of a match expression, where a case

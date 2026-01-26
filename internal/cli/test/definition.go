@@ -1,21 +1,21 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package test
 
 import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/benthosdev/benthos/v4/internal/config/test"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/config/test"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 )
 
 // Execute the test definition.
-func Execute(cases []test.Case, testFilePath string, resourcesPaths []string, logger log.Modular) ([]CaseFailure, error) {
-	procsProvider := NewProcessorsProvider(
-		testFilePath,
-		OptAddResourcesPaths(resourcesPaths),
-		OptProcessorsProviderSetLogger(logger),
-	)
+func Execute(env *bundle.Environment, confSpec docs.FieldSpecs, cases []test.Case, testFilePath string, resourcesPaths []string, logger log.Modular) ([]CaseFailure, error) {
+	procsProvider := NewProcessorsProvider(testFilePath, resourcesPaths, confSpec, env, logger)
 
 	dir := filepath.Dir(testFilePath)
 

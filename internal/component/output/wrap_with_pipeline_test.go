@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package output_test
 
 import (
@@ -10,14 +12,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/pipeline"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/pipeline"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 type mockOutput struct {
@@ -29,8 +32,17 @@ func (m *mockOutput) Consume(ts <-chan message.Transaction) error {
 	return nil
 }
 
-func (m *mockOutput) Connected() bool {
-	return true
+func (m *mockOutput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestNotSupported(component.NoopObservability()).AsList()
+}
+
+func (m *mockOutput) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		component.ConnectionActive(component.NoopObservability()),
+	}
+}
+
+func (m *mockOutput) TriggerStartConsuming() {
 }
 
 func (m *mockOutput) TriggerCloseNow() {
@@ -111,7 +123,7 @@ func TestBasicWrapPipeline(t *testing.T) {
 		t.Error("Wrong messages chan in mock pipe")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	close(dudMsgChan)
@@ -121,7 +133,7 @@ func TestBasicWrapPipeline(t *testing.T) {
 }
 
 func TestBasicWrapPipelinesOrdering(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockOut := &mockOutput{}

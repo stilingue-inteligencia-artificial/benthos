@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -10,15 +12,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/io"
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/io"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestRejectErroredHappy(t *testing.T) {
@@ -56,6 +58,8 @@ fallback:
 	sendChan := make(chan message.Transaction)
 	resChan := make(chan error)
 	require.NoError(t, s.Consume(sendChan))
+
+	s.TriggerStartConsuming()
 
 	t.Cleanup(func() {
 		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
@@ -142,6 +146,8 @@ fallback:
 	sendChan := make(chan message.Transaction)
 	resChan := make(chan error)
 	require.NoError(t, s.Consume(sendChan))
+
+	s.TriggerStartConsuming()
 
 	t.Cleanup(func() {
 		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
@@ -231,6 +237,8 @@ fallback:
 	resChan := make(chan error)
 	require.NoError(t, s.Consume(sendChan))
 
+	s.TriggerStartConsuming()
+
 	t.Cleanup(func() {
 		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
 		s.TriggerCloseNow()
@@ -315,6 +323,8 @@ fallback:
 	sendChan := make(chan message.Transaction)
 	resChan := make(chan error)
 	require.NoError(t, s.Consume(sendChan))
+
+	s.TriggerStartConsuming()
 
 	t.Cleanup(func() {
 		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
@@ -406,6 +416,8 @@ fallback:
 	sendChan := make(chan message.Transaction)
 	resChan := make(chan error)
 	require.NoError(t, s.Consume(sendChan))
+
+	s.TriggerStartConsuming()
 
 	t.Cleanup(func() {
 		ctx, done := context.WithTimeout(context.Background(), time.Second*30)

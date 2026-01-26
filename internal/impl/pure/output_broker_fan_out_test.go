@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -12,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var _ output.Streamed = &fanOutOutputBroker{}
@@ -37,9 +39,11 @@ func TestBasicFanOut(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, oTM.Consume(readChan))
 
-	assert.True(t, oTM.Connected())
+	oTM.TriggerStartConsuming()
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*10)
+	assert.True(t, oTM.ConnectionStatus().AllActive())
+
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	for i := 0; i < nMsgs; i++ {
@@ -95,9 +99,11 @@ func TestBasicFanOutMutations(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, oTM.Consume(readChan))
 
-	assert.True(t, oTM.Connected())
+	oTM.TriggerStartConsuming()
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*10)
+	assert.True(t, oTM.ConnectionStatus().AllActive())
+
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	inMsg := message.NewPart(nil)
@@ -169,7 +175,9 @@ func TestFanOutBackPressure(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, oTM.Consume(readChan))
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*10)
+	oTM.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second*10)
 	defer done()
 
 	wg := sync.WaitGroup{}
@@ -218,6 +226,8 @@ func TestFanOutShutDownFromReceive(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, oTM.Consume(readChan))
 
+	oTM.TriggerStartConsuming()
+
 	select {
 	case readChan <- message.NewTransaction(message.QuickBatch(nil), resChan):
 	case <-time.After(time.Second):
@@ -232,7 +242,7 @@ func TestFanOutShutDownFromReceive(t *testing.T) {
 		t.Fatal("Timed out waiting for msg rcv")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	oTM.TriggerCloseNow()
@@ -257,13 +267,15 @@ func TestFanOutShutDownFromSend(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, oTM.Consume(readChan))
 
+	oTM.TriggerStartConsuming()
+
 	select {
 	case readChan <- message.NewTransaction(message.QuickBatch(nil), resChan):
 	case <-time.After(time.Second):
 		t.Fatal("Timed out waiting for msg send")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	oTM.TriggerCloseNow()
@@ -280,7 +292,7 @@ func TestFanOutShutDownFromSend(t *testing.T) {
 //------------------------------------------------------------------------------
 
 func BenchmarkBasicFanOut(b *testing.B) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(b.Context(), time.Second*5)
 	defer done()
 
 	nOutputs, nMsgs := 3, b.N
@@ -299,6 +311,8 @@ func BenchmarkBasicFanOut(b *testing.B) {
 	oTM, err := newFanOutOutputBroker(outputs)
 	require.NoError(b, err)
 	require.NoError(b, oTM.Consume(readChan))
+
+	oTM.TriggerStartConsuming()
 
 	content := [][]byte{[]byte("hello world")}
 	rFnSlice := make([]func(context.Context, error) error, nOutputs)

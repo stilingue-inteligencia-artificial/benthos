@@ -1,17 +1,19 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"drop", service.NewConfigSpec().
 			Stable().
 			Categories("Utility").
@@ -20,23 +22,24 @@ func init() {
 		func(conf *service.ParsedConfig, res *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			nm := interop.UnwrapManagement(res)
 			var o output.Streamed
-			if o, err = output.NewAsyncWriter("drop", 1, newDropWriter(nm.Logger()), nm); err != nil {
+			if o, err = output.NewAsyncWriter("drop", 1, newDropWriter(nm), nm); err != nil {
 				return
 			}
 			out = interop.NewUnwrapInternalOutput(o)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type dropWriter struct {
-	log log.Modular
+	mgr component.Observability
 }
 
-func newDropWriter(log log.Modular) *dropWriter {
-	return &dropWriter{log: log}
+func newDropWriter(mgr component.Observability) *dropWriter {
+	return &dropWriter{mgr: mgr}
+}
+
+func (d *dropWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestSucceeded(d.mgr).AsList()
 }
 
 func (d *dropWriter) Connect(ctx context.Context) error {

@@ -1,19 +1,22 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func resourceInputSpec() *service.ConfigSpec {
@@ -22,7 +25,7 @@ func resourceInputSpec() *service.ConfigSpec {
 		Categories("Utility").
 		Summary(`Resource is an input type that channels messages from a resource input, identified by its name.`).
 		Description(`Resources allow you to tidy up deeply nested configs. For example, the config:
-		
+
 ` + "```yaml" + `
 input:
   broker:
@@ -56,16 +59,16 @@ input_resources:
     gcp_pubsub:
       project: bar
       subscription: baz
- ` + "```" + `
+` + "```" + `
 
 Resources also allow you to reference a single input in multiple places, such as multiple streams mode configs, or multiple entries in a broker input. However, when a resource is referenced more than once the messages it produces are distributed across those references, so each message will only be directed to a single reference, not all of them.
 
-You can find out more about resources [in this document.](/docs/configuration/resources)`).
+You can find out more about resources in xref:configuration:resources.adoc[].`).
 		Field(service.NewStringField("").Default(""))
 }
 
 func init() {
-	err := service.RegisterBatchInput("resource", resourceInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
+	service.MustRegisterBatchInput("resource", resourceInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 		name, err := conf.FieldString()
 		if err != nil {
 			return nil, err
@@ -81,22 +84,19 @@ func init() {
 			tChan:   make(chan message.Transaction),
 			shutSig: shutdown.NewSignaller(),
 		}
-		go ri.loop()
 		return interop.NewUnwrapInternalInput(ri), nil
 	})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
 
 type resourceInput struct {
-	mgr     bundle.NewManagement
-	tChan   chan message.Transaction
-	name    string
-	log     log.Modular
-	shutSig *shutdown.Signaller
+	mgr       bundle.NewManagement
+	tChan     chan message.Transaction
+	name      string
+	log       log.Modular
+	shutSig   *shutdown.Signaller
+	startOnce sync.Once
 }
 
 func (r *resourceInput) loop() {
@@ -144,13 +144,34 @@ func (r *resourceInput) TransactionChan() (tChan <-chan message.Transaction) {
 	return r.tChan
 }
 
-func (r *resourceInput) Connected() (isConnected bool) {
+// ConnectionTest attempts to find the target resource and executes a connection
+// test on it.
+func (r *resourceInput) ConnectionTest(ctx context.Context) (res component.ConnectionTestResults) {
 	if err := r.mgr.AccessInput(context.Background(), r.name, func(i input.Streamed) {
-		isConnected = i.Connected()
+		res = i.ConnectionTest(ctx)
 	}); err != nil {
-		r.log.Error("Failed to obtain input resource '%v': %v", r.name, err)
+		return component.ConnectionTestResults{
+			component.ConnectionTestFailed(r.mgr, err),
+		}
 	}
 	return
+}
+
+func (r *resourceInput) ConnectionStatus() (s component.ConnectionStatuses) {
+	if err := r.mgr.AccessInput(context.Background(), r.name, func(i input.Streamed) {
+		s = i.ConnectionStatus()
+	}); err != nil {
+		return component.ConnectionStatuses{
+			component.ConnectionFailing(r.mgr, err),
+		}
+	}
+	return
+}
+
+func (r *resourceInput) TriggerStartConsuming() {
+	r.startOnce.Do(func() {
+		go r.loop()
+	})
 }
 
 func (r *resourceInput) TriggerStopConsuming() {

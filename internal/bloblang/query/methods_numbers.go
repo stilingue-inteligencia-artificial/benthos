@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package query
 
 import (
@@ -5,11 +7,11 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 var _ = registerSimpleMethod(
-	NewMethodSpec("ceil", "Returns the least integer value greater than or equal to a number. If the resulting value fits within a 64-bit integer then that is returned, otherwise a new floating point number is returned.").InCategory(
+	NewMethodSpec("ceil", "Rounds a number up to the nearest integer. Returns an integer if the result fits in 64-bit, otherwise returns a float.").InCategory(
 		MethodCategoryNumbers, "",
 		NewExampleSpec("",
 			`root.new_value = this.value.ceil()`,
@@ -17,6 +19,11 @@ var _ = registerSimpleMethod(
 			`{"new_value":6}`,
 			`{"value":-5.9}`,
 			`{"new_value":-5}`,
+		),
+		NewExampleSpec("",
+			`root.result = this.price.ceil()`,
+			`{"price":19.99}`,
+			`{"result":20}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -38,7 +45,7 @@ var _ = registerSimpleMethod(
 
 var _ = registerSimpleMethod(
 	NewMethodSpec(
-		"floor", "Returns the greatest integer value less than or equal to the target number. If the resulting value fits within a 64-bit integer then that is returned, otherwise a new floating point number is returned.",
+		"floor", "Rounds a number down to the nearest integer. Returns an integer if the result fits in 64-bit, otherwise returns a float.",
 	).InCategory(
 		MethodCategoryNumbers,
 		"",
@@ -46,6 +53,13 @@ var _ = registerSimpleMethod(
 			`root.new_value = this.value.floor()`,
 			`{"value":5.7}`,
 			`{"new_value":5}`,
+			`{"value":-3.2}`,
+			`{"new_value":-4}`,
+		),
+		NewExampleSpec("",
+			`root.whole_seconds = this.duration_seconds.floor()`,
+			`{"duration_seconds":12.345}`,
+			`{"whole_seconds":12}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -66,7 +80,7 @@ var _ = registerSimpleMethod(
 )
 
 var _ = registerSimpleMethod(
-	NewMethodSpec("log", "Returns the natural logarithm of a number.").InCategory(
+	NewMethodSpec("log", "Calculates the natural logarithm (base e) of a number.").InCategory(
 		MethodCategoryNumbers, "",
 		NewExampleSpec("",
 			`root.new_value = this.value.log().round()`,
@@ -74,6 +88,11 @@ var _ = registerSimpleMethod(
 			`{"new_value":0}`,
 			`{"value":2.7183}`,
 			`{"new_value":1}`,
+		),
+		NewExampleSpec("",
+			`root.ln_result = this.number.log()`,
+			`{"number":10}`,
+			`{"ln_result":2.302585092994046}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -92,7 +111,7 @@ var _ = registerSimpleMethod(
 )
 
 var _ = registerSimpleMethod(
-	NewMethodSpec("log10", "Returns the decimal logarithm of a number.").InCategory(
+	NewMethodSpec("log10", "Calculates the base-10 logarithm of a number.").InCategory(
 		MethodCategoryNumbers, "",
 		NewExampleSpec("",
 			`root.new_value = this.value.log10()`,
@@ -100,6 +119,11 @@ var _ = registerSimpleMethod(
 			`{"new_value":2}`,
 			`{"value":1000}`,
 			`{"new_value":3}`,
+		),
+		NewExampleSpec("",
+			`root.log_value = this.magnitude.log10()`,
+			`{"magnitude":10000}`,
+			`{"log_value":4}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -120,7 +144,7 @@ var _ = registerSimpleMethod(
 var _ = registerSimpleMethod(
 	NewMethodSpec(
 		"max",
-		"Returns the largest numerical value found within an array. All values must be numerical and the array must not be empty, otherwise an error is returned.",
+		"Returns the largest number from an array. All elements must be numbers and the array cannot be empty.",
 	).InCategory(
 		MethodCategoryNumbers, "",
 		NewExampleSpec("",
@@ -129,11 +153,9 @@ var _ = registerSimpleMethod(
 			`{"biggest":7}`,
 		),
 		NewExampleSpec("",
-			`root.new_value = [0,this.value].max()`,
-			`{"value":-1}`,
-			`{"new_value":0}`,
-			`{"value":7}`,
-			`{"new_value":7}`,
+			`root.highest_temp = this.temperatures.max()`,
+			`{"temperatures":[20.5,22.1,19.8,23.4]}`,
+			`{"highest_temp":23.4}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -145,17 +167,17 @@ var _ = registerSimpleMethod(
 			if len(arr) == 0 {
 				return nil, errors.New("the array was empty")
 			}
-			var max float64
+			var maxV float64
 			for i, n := range arr {
 				f, err := value.IGetNumber(n)
 				if err != nil {
 					return nil, fmt.Errorf("index %v of array: %w", i, err)
 				}
-				if i == 0 || f > max {
-					max = f
+				if i == 0 || f > maxV {
+					maxV = f
 				}
 			}
-			return max, nil
+			return maxV, nil
 		}, nil
 	},
 )
@@ -163,7 +185,7 @@ var _ = registerSimpleMethod(
 var _ = registerSimpleMethod(
 	NewMethodSpec(
 		"min",
-		"Returns the smallest numerical value found within an array. All values must be numerical and the array must not be empty, otherwise an error is returned.",
+		"Returns the smallest number from an array. All elements must be numbers and the array cannot be empty.",
 	).InCategory(
 		MethodCategoryNumbers, "",
 		NewExampleSpec("",
@@ -172,11 +194,9 @@ var _ = registerSimpleMethod(
 			`{"smallest":-2.5}`,
 		),
 		NewExampleSpec("",
-			`root.new_value = [10,this.value].min()`,
-			`{"value":2}`,
-			`{"new_value":2}`,
-			`{"value":23}`,
-			`{"new_value":10}`,
+			`root.lowest_temp = this.temperatures.min()`,
+			`{"temperatures":[20.5,22.1,19.8,23.4]}`,
+			`{"lowest_temp":19.8}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -188,24 +208,24 @@ var _ = registerSimpleMethod(
 			if len(arr) == 0 {
 				return nil, errors.New("the array was empty")
 			}
-			var max float64
+			var maxV float64
 			for i, n := range arr {
 				f, err := value.IGetNumber(n)
 				if err != nil {
 					return nil, fmt.Errorf("index %v of array: %w", i, err)
 				}
-				if i == 0 || f < max {
-					max = f
+				if i == 0 || f < maxV {
+					maxV = f
 				}
 			}
-			return max, nil
+			return maxV, nil
 		}, nil
 	},
 )
 
 var _ = registerSimpleMethod(
 	NewMethodSpec(
-		"round", "Rounds numbers to the nearest integer, rounding half away from zero. If the resulting value fits within a 64-bit integer then that is returned, otherwise a new floating point number is returned.",
+		"round", "Rounds a number to the nearest integer. Values at .5 round away from zero. Returns an integer if the result fits in 64-bit, otherwise returns a float.",
 	).InCategory(
 		MethodCategoryNumbers,
 		"",
@@ -215,6 +235,11 @@ var _ = registerSimpleMethod(
 			`{"new_value":5}`,
 			`{"value":5.9}`,
 			`{"new_value":6}`,
+		),
+		NewExampleSpec("",
+			`root.rounded = this.score.round()`,
+			`{"score":87.5}`,
+			`{"rounded":88}`,
 		),
 	),
 	func(*ParsedParams) (simpleMethod, error) {
@@ -231,5 +256,107 @@ var _ = registerSimpleMethod(
 			}
 			return *ui, nil
 		}), nil
+	},
+)
+
+var _ = registerSimpleMethod(
+	NewMethodSpec(
+		"bitwise_and", "Performs a bitwise AND operation between the integer and the specified value.",
+	).InCategory(
+		MethodCategoryNumbers,
+		"",
+		NewExampleSpec("",
+			`root.new_value = this.value.bitwise_and(6)`,
+			`{"value":12}`,
+			`{"new_value":4}`,
+		),
+		NewExampleSpec("",
+			`root.masked = this.flags.bitwise_and(15)`,
+			`{"flags":127}`,
+			`{"masked":15}`,
+		),
+	).Param(ParamInt64("value", "The value to AND with")),
+	func(args *ParsedParams) (simpleMethod, error) {
+		rhs, err := args.FieldInt64("value")
+		if err != nil {
+			return nil, err
+		}
+
+		return func(v any, _ FunctionContext) (any, error) {
+			lhs, err := value.IGetInt(v)
+			if err != nil {
+				return nil, value.NewTypeError(v, value.TInt)
+			}
+
+			return lhs & rhs, nil
+		}, nil
+	},
+)
+
+var _ = registerSimpleMethod(
+	NewMethodSpec(
+		"bitwise_or", "Performs a bitwise OR operation between the integer and the specified value.",
+	).InCategory(
+		MethodCategoryNumbers,
+		"",
+		NewExampleSpec("",
+			`root.new_value = this.value.bitwise_or(6)`,
+			`{"value":12}`,
+			`{"new_value":14}`,
+		),
+		NewExampleSpec("",
+			`root.combined = this.flags.bitwise_or(8)`,
+			`{"flags":4}`,
+			`{"combined":12}`,
+		),
+	).Param(ParamInt64("value", "The value to OR with")),
+	func(args *ParsedParams) (simpleMethod, error) {
+		rhs, err := args.FieldInt64("value")
+		if err != nil {
+			return nil, err
+		}
+
+		return func(v any, _ FunctionContext) (any, error) {
+			lhs, err := value.IGetInt(v)
+			if err != nil {
+				return nil, value.NewTypeError(v, value.TInt)
+			}
+
+			return lhs | rhs, nil
+		}, nil
+	},
+)
+
+var _ = registerSimpleMethod(
+	NewMethodSpec(
+		"bitwise_xor", "Performs a bitwise XOR (exclusive OR) operation between the integer and the specified value.",
+	).InCategory(
+		MethodCategoryNumbers,
+		"",
+		NewExampleSpec("",
+			`root.new_value = this.value.bitwise_xor(6)`,
+			`{"value":12}`,
+			`{"new_value":10}`,
+		),
+		NewExampleSpec("",
+			`root.toggled = this.flags.bitwise_xor(5)`,
+			`{"flags":3}`,
+			`{"toggled":6}`,
+		),
+	).Param(ParamInt64("value", "The value to XOR with")),
+	func(args *ParsedParams) (simpleMethod, error) {
+		rhs, err := args.FieldInt64("value")
+		if err != nil {
+			return nil, err
+		}
+
+		return func(v any, _ FunctionContext) (any, error) {
+			lhs, err := value.IGetInt(v)
+			if err != nil {
+				return nil, value.NewTypeError(v, value.TInt)
+			}
+
+			return lhs ^ rhs, nil
+		}, nil
 	},
 )

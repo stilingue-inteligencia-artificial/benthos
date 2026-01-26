@@ -1,10 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracing
 
 import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // EventType describes the type of event a component might experience during

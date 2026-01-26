@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -9,10 +11,10 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // wrappedOutput is a struct that wraps a DynamicOutput with an identifying
@@ -45,7 +47,8 @@ type dynamicFanOutOutputBroker struct {
 	newOutputChan chan wrappedOutput
 	outputs       map[string]outputWithTSChan
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newDynamicFanOutOutputBroker(
@@ -111,8 +114,6 @@ func (d *dynamicFanOutOutputBroker) Consume(transactions <-chan message.Transact
 		return component.ErrAlreadyStarted
 	}
 	d.transactions = transactions
-
-	go d.loop()
 	return nil
 }
 
@@ -130,8 +131,10 @@ func (d *dynamicFanOutOutputBroker) addOutput(ident string, output output.Stream
 		output.TriggerCloseNow()
 		return err
 	}
-	ow.ctx, ow.done = context.WithCancel(context.Background())
 
+	output.TriggerStartConsuming()
+
+	ow.ctx, ow.done = context.WithCancel(context.Background())
 	d.outputs[ident] = ow
 	return nil
 }
@@ -282,15 +285,28 @@ func (d *dynamicFanOutOutputBroker) loop() {
 	}
 }
 
-func (d *dynamicFanOutOutputBroker) Connected() bool {
+func (d *dynamicFanOutOutputBroker) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
 	d.outputsMut.RLock()
 	defer d.outputsMut.RUnlock()
 	for _, out := range d.outputs {
-		if !out.output.Connected() {
-			return false
-		}
+		s = append(s, out.output.ConnectionTest(ctx)...)
 	}
-	return true
+	return
+}
+
+func (d *dynamicFanOutOutputBroker) ConnectionStatus() (s component.ConnectionStatuses) {
+	d.outputsMut.RLock()
+	defer d.outputsMut.RUnlock()
+	for _, out := range d.outputs {
+		s = append(s, out.output.ConnectionStatus()...)
+	}
+	return
+}
+
+func (d *dynamicFanOutOutputBroker) TriggerStartConsuming() {
+	d.startOnce.Do(func() {
+		go d.loop()
+	})
 }
 
 func (d *dynamicFanOutOutputBroker) TriggerCloseNow() {

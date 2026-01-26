@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,7 +8,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const scFieldSize = "size"
@@ -22,13 +24,10 @@ func chunkerScannerSpec() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterBatchScannerCreator("chunker", chunkerScannerSpec(),
+	service.MustRegisterBatchScannerCreator("chunker", chunkerScannerSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchScannerCreator, error) {
 			return chunkerScannerFromParsed(conf)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func chunkerScannerFromParsed(conf *service.ParsedConfig) (l *chunkerScannerCreator, err error) {

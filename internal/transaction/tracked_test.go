@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package transaction
 
 import (
@@ -6,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestTaggingErrorsSinglePart(t *testing.T) {

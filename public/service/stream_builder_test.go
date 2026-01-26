@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service_test
 
 import (
@@ -15,10 +17,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/io"
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/io"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestStreamBuilderDefault(t *testing.T) {
@@ -84,7 +86,7 @@ file:
 	go func() {
 		defer wg.Done()
 
-		ctx, done := context.WithTimeout(context.Background(), time.Second*10)
+		ctx, done := context.WithTimeout(t.Context(), time.Second*10)
 		defer done()
 
 		require.NoError(t, pushFn(ctx, service.NewMessage([]byte("hello world 1"))))
@@ -94,7 +96,7 @@ file:
 		require.NoError(t, strm.StopWithin(time.Second*5))
 	}()
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 	wg.Wait()
 
 	outBytes, err := os.ReadFile(outFilePath)
@@ -135,7 +137,7 @@ file:
 	go func() {
 		defer wg.Done()
 
-		ctx, done := context.WithTimeout(context.Background(), time.Second*10)
+		ctx, done := context.WithTimeout(t.Context(), time.Second*10)
 		defer done()
 
 		require.NoError(t, pushFn(ctx, service.MessageBatch{
@@ -154,7 +156,7 @@ file:
 		require.NoError(t, strm.StopWithin(time.Second*5))
 	}()
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 	wg.Wait()
 
 	outBytes, err := os.ReadFile(outFilePath)
@@ -244,7 +246,7 @@ file:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 
 	outMut.Lock()
 	assert.Equal(t, map[string]struct{}{
@@ -253,6 +255,116 @@ file:
 		"hello world 3": {},
 	}, outMsgs)
 	outMut.Unlock()
+}
+
+func TestStreamBuilderConnectionTests(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	realFilePath := filepath.Join(tmpDir, "in.txt")
+	require.NoError(t, os.WriteFile(realFilePath, []byte(`HELLO WORLD 1
+HELLO WORLD 2
+HELLO WORLD 3`), 0o755))
+
+	_ = realFilePath
+
+	for _, test := range []struct {
+		name     string
+		config   string
+		expected map[string]string
+	}{
+		{
+			name: "input and output can connect",
+			config: `
+input:
+  label: foo
+  generate:
+    count: 1
+    mapping: foo = "hello"
+
+output:
+  label: bar
+  drop: {}
+`,
+			expected: map[string]string{
+				"foo": "",
+				"bar": "",
+			},
+		},
+		{
+			name: "input and output cant connect",
+			config: `
+input:
+  label: foo
+  file:
+    paths: [ /im/sorry/but/this/doesnt/exist/probably.uh ]
+
+output:
+  label: bar
+  websocket:
+    url: ws://127.0.0.1:1234/nope/this/is/not/real
+`,
+			expected: map[string]string{
+				"foo": "no such file or directory",
+				"bar": "dial",
+			},
+		},
+		{
+			name: "mix of inputs and outputs that can and cant connect",
+			config: `
+input:
+  broker:
+    inputs:
+      - label: a
+        generate:
+          count: 1
+          mapping: foo = "hello"
+      - label: b
+        file:
+          paths: [ /im/sorry/but/this/doesnt/exist/probably.uh ]
+
+output:
+  broker:
+    outputs:
+      - label: c
+        websocket:
+          url: ws://127.0.0.1:1234/nope/this/is/not/real
+      - label: d
+        drop: {}
+`,
+			expected: map[string]string{
+				"a": "",
+				"b": "no such file or directory",
+				"c": "dial",
+				"d": "",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			b := service.NewStreamBuilder()
+			require.NoError(t, b.SetLoggerYAML("level: NONE"))
+			require.NoError(t, b.SetYAML(test.config))
+
+			strm, err := b.Build()
+			require.NoError(t, err)
+
+			results, err := strm.ConnectionTest(t.Context())
+			require.NoError(t, err)
+
+			resMap := map[string]string{}
+			for _, r := range results {
+				tmpErrStr := ""
+				if r.Err != nil {
+					tmpErrStr = r.Err.Error()
+				}
+				resMap[r.Label] = tmpErrStr
+			}
+
+			require.Len(t, resMap, len(test.expected))
+			for k, v := range test.expected {
+				assert.Contains(t, resMap[k], v)
+			}
+		})
+	}
 }
 
 func TestStreamBuilderConsumerFuncInlineProcs(t *testing.T) {
@@ -297,7 +409,7 @@ processors:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 
 	outMut.Lock()
 	assert.Equal(t, map[string]struct{}{
@@ -358,7 +470,7 @@ file:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	require.NoError(t, strm.Run(context.Background()))
+	require.NoError(t, strm.Run(t.Context()))
 
 	outMut.Lock()
 	assert.Equal(t, map[string]struct{}{
@@ -741,7 +853,7 @@ output:
 					name:    "generate",
 					conf: `label: ""
 generate:
-    mapping: 'root = deleted()'`,
+  mapping: 'root = deleted()'`,
 				},
 				{
 					typeStr: "buffer",
@@ -794,10 +906,10 @@ output:
 					name:    "generate",
 					conf: `label: ""
 generate:
-    mapping: 'root = deleted()'
+  mapping: 'root = deleted()'
 processors:
-    - label: ""
-      mutation: 'root = "hm"'`,
+  - label: ""
+    mutation: 'root = "hm"'`,
 				},
 				{
 					typeStr: "processor",
@@ -816,8 +928,8 @@ mutation: 'root = "hm"'`,
 					conf: `label: ""
 reject: lol nah
 processors:
-    - label: ""
-      mutation: 'root = "eh"'`,
+  - label: ""
+    mutation: 'root = "eh"'`,
 				},
 				{
 					typeStr: "processor",
@@ -854,16 +966,16 @@ input:
 					name:    "dynamic",
 					conf: `label: ""
 dynamic:
-    inputs:
-        foo:
-            file:
-                paths: [aaa.txt]`,
+  inputs:
+    foo:
+      file:
+        paths: [aaa.txt]`,
 				},
 				{
 					typeStr: "input",
 					name:    "file",
 					conf: `file:
-    paths: [aaa.txt]`,
+  paths: [aaa.txt]`,
 				},
 				{
 					typeStr: "buffer",
@@ -1017,7 +1129,7 @@ output:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 	require.NoError(t, strm.Run(tCtx))
 
@@ -1056,7 +1168,7 @@ output:
 	strm, err := b.Build()
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 	require.NoError(t, strm.Run(tCtx))
 
@@ -1099,7 +1211,7 @@ logger:
 		strm, err := strmBuilder.Build()
 		require.NoError(b, err)
 
-		require.NoError(b, strm.Run(context.Background()))
+		require.NoError(b, strm.Run(b.Context()))
 	}
 }
 
@@ -1180,7 +1292,7 @@ logger:
 		strm, err := strmBuilder.Build()
 		require.NoError(b, err)
 
-		require.NoError(b, strm.Run(context.Background()))
+		require.NoError(b, strm.Run(b.Context()))
 	}
 }
 
@@ -1254,7 +1366,7 @@ output:
 	strm, tracSum, err := b.BuildTraced()
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 	require.NoError(t, strm.Run(tCtx))
 

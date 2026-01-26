@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
@@ -8,10 +10,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	bmanager "github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	bmanager "github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 )
 
 func harmlessConf(t testing.TB) stream.Config {
@@ -30,7 +32,7 @@ output:
 }
 
 func TestTypeBasicOperations(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	res, err := bmanager.New(bmanager.NewResourceConfig())
@@ -92,7 +94,7 @@ func TestTypeBasicOperations(t *testing.T) {
 }
 
 func TestTypeBasicClose(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	res, err := bmanager.New(bmanager.NewResourceConfig())

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package integration
 
 import (
@@ -9,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

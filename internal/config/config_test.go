@@ -1,8 +1,10 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package config_test
 
 import (
 	"bytes"
-	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,15 +15,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/config"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/io"
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/io"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func testConfToAny(t testing.TB, conf any) any {
@@ -47,7 +49,7 @@ func TestSetOverridesOnNothing(t *testing.T) {
 		"output.type=drop",
 	))
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	assert.Empty(t, lints)
 
@@ -88,7 +90,7 @@ func TestSetOverrideErrors(t *testing.T) {
 	for _, test := range tests {
 		rdr := config.NewReader("", nil, config.OptAddOverrides(test.input))
 
-		_, _, err := rdr.Read()
+		_, _, _, err := rdr.Read()
 		assert.Contains(t, err.Error(), test.err)
 	}
 }
@@ -110,7 +112,7 @@ input:
 		"output.type=drop",
 	))
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	assert.Empty(t, lints)
 
@@ -166,7 +168,7 @@ tests:
 
 	rdr := config.NewReader(fullPath, []string{resourceOnePath, resourceTwoPath, resourceThreePath})
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	assert.Empty(t, lints)
 
@@ -218,7 +220,7 @@ cache_resources:
 
 	rdr := config.NewReader(fullPath, []string{resourceOnePath, resourceTwoPath})
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Len(t, lints, 3)
 	assert.Contains(t, lints[0], "/main.yaml(3,1) field meow1 ")
@@ -269,12 +271,14 @@ func TestDefaultBasedOverridesWithYAML(t *testing.T) {
 	s, err := stream.New(c.Config, mock.NewManager())
 	require.NoError(t, err)
 
+	s.TriggerStartConsuming()
+
 	assert.Eventually(t, func() bool {
 		fBytes, _ := os.ReadFile(outFile)
 		return bytes.Contains(fBytes, []byte(`{"foo":"bar"}`))
 	}, time.Second, time.Millisecond*10)
 
-	require.NoError(t, s.Stop(context.Background()))
+	require.NoError(t, s.Stop(t.Context()))
 }
 
 func TestDefaultBasedOverridesWithAny(t *testing.T) {
@@ -306,12 +310,14 @@ input:
 	s, err := stream.New(c.Config, mock.NewManager())
 	require.NoError(t, err)
 
+	s.TriggerStartConsuming()
+
 	assert.Eventually(t, func() bool {
 		fBytes, _ := os.ReadFile(outFile)
 		return bytes.Contains(fBytes, []byte(`{"foo":"bar"}`))
 	}, time.Second, time.Millisecond*10)
 
-	require.NoError(t, s.Stop(context.Background()))
+	require.NoError(t, s.Stop(t.Context()))
 }
 
 func TestDefaultBasedOverridesWithExplicit(t *testing.T) {
@@ -346,10 +352,146 @@ input:
 	s, err := stream.New(c.Config, mock.NewManager())
 	require.NoError(t, err)
 
+	s.TriggerStartConsuming()
+
 	assert.Eventually(t, func() bool {
 		fBytes, _ := os.ReadFile(outFile)
 		return bytes.Contains(fBytes, []byte(`{"foo":"bar"}`))
 	}, time.Second, time.Millisecond*10)
 
-	require.NoError(t, s.Stop(context.Background()))
+	require.NoError(t, s.Stop(t.Context()))
+}
+
+func TestSetOverridesStructured(t *testing.T) {
+	dir := t.TempDir()
+
+	fullPath := filepath.Join(dir, "main.yaml")
+	require.NoError(t, os.WriteFile(fullPath, []byte(`
+input:
+  generate:
+    count: 10
+    interval: 2s
+    mapping: 'root = "meow"'
+`), 0o644))
+
+	rdr := config.NewReader(fullPath, nil, config.OptAddOverrides(
+		"input.generate={}",
+		"input.generate.count=5",
+		"input.generate.mapping=root.id = uuid_v4()",
+		"output.type=drop",
+	))
+
+	conf, _, lints, err := rdr.Read()
+	require.NoError(t, err)
+	assert.Empty(t, lints)
+
+	v := gabs.Wrap(testConfToAny(t, conf))
+
+	assert.Equal(t, `root.id = uuid_v4()`, v.S("input", "generate", "mapping").Data())
+	assert.Nil(t, v.S("input", "generate", "interval").Data())
+	assert.Equal(t, 5, v.S("input", "generate", "count").Data())
+
+	oMap := v.S("output").ChildrenMap()
+	assert.Len(t, oMap, 2)
+	assert.Contains(t, oMap, "drop")
+	assert.Contains(t, oMap, "label")
+}
+
+func TestEnvVarInterpolation(t *testing.T) {
+	dir := t.TempDir()
+
+	countVar := "COUNT"
+	foobarVar := "FOOBAR"
+	intervalVar := "INTERVAL"
+	ttlVar := "TTL"
+	envVars := map[string]struct {
+		val       any
+		base64Val string
+	}{
+		countVar: {
+			val:       1234567,
+			base64Val: "MTIzNDU2Nw==",
+		},
+		foobarVar: {
+			val:       "meow",
+			base64Val: "bWVvdw==",
+		},
+		intervalVar: {
+			val:       "1337s",
+			base64Val: "MTMzN3M=",
+		},
+		ttlVar: {
+			val:       "42s",
+			base64Val: "NDJz",
+		},
+	}
+
+	fullPath := filepath.Join(dir, "main.yaml")
+	require.NoError(t, os.WriteFile(fullPath, []byte(`
+input:
+  generate:
+    count: ${COUNT|base64decode}
+    interval: ${INTERVAL:MTMzN3M=|base64decode}
+    mapping: 'root = "${FOOBAR:bWVvdw==|base64decode}"'
+
+output:
+  drop: {}
+`), 0o644))
+
+	resourcePath := filepath.Join(dir, "res.yaml")
+	require.NoError(t, os.WriteFile(resourcePath, []byte(`
+cache_resources:
+  - label: ${FOOBAR:bWVvdw==|base64decode}
+    memory:
+      default_ttl: ${TTL:NDJz|base64decode}
+`), 0o644))
+
+	tests := []struct {
+		name       string
+		envVarsSet bool
+	}{
+		{
+			name:       "env vars are set",
+			envVarsSet: true,
+		},
+		{
+			name: "env vars use their default values if any",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if test.envVarsSet {
+				for k, v := range envVars {
+					t.Setenv(k, v.base64Val)
+				}
+			}
+
+			rdr := config.NewReader(fullPath, []string{resourcePath})
+
+			conf, _, lints, err := rdr.Read()
+			require.NoError(t, err)
+
+			if test.envVarsSet {
+				require.Empty(t, lints)
+			} else {
+				require.Len(t, lints, 1)
+				assert.Contains(t, lints[0], "(1,1) required environment variables were not set: [COUNT]")
+			}
+
+			v := gabs.Wrap(testConfToAny(t, conf))
+
+			if test.envVarsSet {
+				assert.Equal(t, envVars[countVar].val, v.S("input", "generate", "count").Data())
+			} else {
+				assert.Nil(t, v.S("input", "generate", "count").Data())
+			}
+			assert.Equal(t, envVars[intervalVar].val, v.S("input", "generate", "interval").Data())
+			assert.Equal(t, fmt.Sprintf(`root = "%s"`, envVars[foobarVar].val), v.S("input", "generate", "mapping").Data())
+
+			require.Len(t, v.S("cache_resources").Data(), 1)
+			assert.Equal(t, envVars[foobarVar].val, v.S("cache_resources", "0", "label").Data())
+			assert.Equal(t, "42s", v.S("cache_resources", "0", "memory", "default_ttl").Data())
+		})
+	}
 }

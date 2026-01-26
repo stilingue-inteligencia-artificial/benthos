@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -11,11 +13,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	bmock "github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	bmock "github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestReadUntilErrs(t *testing.T) {
@@ -35,7 +37,7 @@ func TestReadUntilInput(t *testing.T) {
 bar
 baz`)
 
-	tmpfile, err := os.CreateTemp("", "benthos_read_until_test")
+	tmpfile, err := os.CreateTemp(t.TempDir(), "benthos_read_until_test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +82,8 @@ func testReadUntilBasic(inConf string, t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	in.TriggerStartConsuming()
 
 	expMsgs := []string{
 		"foo",
@@ -139,6 +143,8 @@ func testReadUntilRestart(inConf string, t *testing.T) {
 	in, err := bmock.NewManager().NewInput(rConf)
 	require.NoError(t, err)
 
+	in.TriggerStartConsuming()
+
 	expMsgs := []string{
 		"foo",
 		"bar",
@@ -179,6 +185,8 @@ func testReadUntilRetry(inConf string, t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	in.TriggerStartConsuming()
 
 	expMsgs := map[string]struct{}{
 		"foo": {},
@@ -285,11 +293,13 @@ read_until:
 	strm, err := bmock.NewManager().NewInput(conf)
 	require.NoError(t, err)
 
+	strm.TriggerStartConsuming()
+
 	tran, open := <-strm.TransactionChan()
 	require.True(t, open)
 	require.Len(t, tran.Payload, 1)
 	assert.Equal(t, `{"id":1}`, string(tran.Payload[0].AsBytes()))
-	require.NoError(t, tran.Ack(context.Background(), nil))
+	require.NoError(t, tran.Ack(t.Context(), nil))
 
 	_, open = <-strm.TransactionChan()
 	require.False(t, open)

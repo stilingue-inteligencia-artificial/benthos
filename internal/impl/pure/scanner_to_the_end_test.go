@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -9,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/scanner/testutil"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/scanner/testutil"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestToTheEndScanner(t *testing.T) {
@@ -35,20 +37,20 @@ test:
 	for _, s := range []string{
 		"firstXsecondXthird",
 	} {
-		m, aFn, err := strm.NextBatch(context.Background())
+		m, aFn, err := strm.NextBatch(t.Context())
 		require.NoError(t, err)
 		require.Len(t, m, 1)
 		mBytes, err := m[0].AsBytes()
 		require.NoError(t, err)
 		assert.Equal(t, s, string(mBytes))
-		require.NoError(t, aFn(context.Background(), nil))
+		require.NoError(t, aFn(t.Context(), nil))
 		assert.False(t, acked)
 	}
 
-	_, _, err = strm.NextBatch(context.Background())
+	_, _, err = strm.NextBatch(t.Context())
 	require.Equal(t, io.EOF, err)
 
-	require.NoError(t, strm.Close(context.Background()))
+	require.NoError(t, strm.Close(t.Context()))
 	assert.True(t, acked)
 }
 

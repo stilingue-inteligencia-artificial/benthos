@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -16,13 +18,13 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -47,23 +49,24 @@ func subProcSpec() *service.ConfigSpec {
 		Stable().
 		Summary("Executes a command as a subprocess and, for each message, will pipe its contents to the stdin stream of the process followed by a newline.").
 		Description(`
-:::info
-This processor keeps the subprocess alive and requires very specific behaviour from the command executed. If you wish to simply execute a command for each message take a look at the [`+"`command`"+` processor](/docs/components/processors/command) instead.
-:::
+[NOTE]
+====
+This processor keeps the subprocess alive and requires very specific behavior from the command executed. If you wish to simply execute a command for each message take a look at the xref:components:processors/command.adoc[`+"`command`"+` processor] instead.
+====
 
-The subprocess must then either return a line over stdout or stderr. If a response is returned over stdout then its contents will replace the message. If a response is instead returned from stderr it will be logged and the message will continue unchanged and will be [marked as failed](/docs/configuration/error_handling).
+The subprocess must then either return a line over stdout or stderr. If a response is returned over stdout then its contents will replace the message. If a response is instead returned from stderr it will be logged and the message will continue unchanged and will be xref:configuration:error_handling.adoc[marked as failed].
 
-Rather than separating data by a newline it's possible to specify alternative `+"[`codec_send`](#codec_send) and [`codec_recv`](#codec_recv)"+` values, which allow binary messages to be encoded for logical separation.
+Rather than separating data by a newline it's possible to specify alternative `+"<<codec_send,`codec_send`>> and <<codec_recv,`codec_recv`>>"+` values, which allow binary messages to be encoded for logical separation.
 
-The execution environment of the subprocess is the same as the Benthos instance, including environment variables and the current working directory.
+The execution environment of the subprocess is the same as the Redpanda Connect instance, including environment variables and the current working directory.
 
 The field `+"`max_buffer`"+` defines the maximum response size able to be read from the subprocess. This value should be set significantly above the real expected maximum response size.
 
-## Subprocess requirements
+== Subprocess requirements
 
-It is required that subprocesses flush their stdout and stderr pipes for each line. Benthos will attempt to keep the process alive for as long as the pipeline is running. If the process exits early it will be restarted.
+It is required that subprocesses flush their stdout and stderr pipes for each line. Redpanda Connect will attempt to keep the process alive for as long as the pipeline is running. If the process exits early it will be restarted.
 
-## Messages containing line breaks
+== Messages containing line breaks
 
 If a message contains line breaks each line of the message is piped to the subprocess and flushed, and a response is expected from the subprocess before another line is fed in.`).
 		Fields(
@@ -91,7 +94,7 @@ If a message contains line breaks each line of the message is piped to the subpr
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"subprocess", subProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			var sConf subprocConfig
@@ -119,9 +122,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedProcessor("subprocess", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type subprocessProc struct {
@@ -201,7 +201,7 @@ func (e *subprocessProc) getSendSubprocessorFunc(codec string) (func(part *messa
 			return nil
 		}, nil
 	}
-	return nil, fmt.Errorf("unrecognized codec_send value: %v", codec)
+	return nil, fmt.Errorf("unrecognised codec_send value: %v", codec)
 }
 
 type subprocWrapper struct {

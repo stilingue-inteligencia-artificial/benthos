@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestJSONSchemaExternalSchemaRelativePath(t *testing.T) {
@@ -59,7 +60,7 @@ json_schema:
 	c, err := mock.NewManager().NewProcessor(conf)
 	require.NoError(t, err)
 
-	msgs, _ := c.ProcessBatch(context.Background(), message.Batch{
+	msgs, _ := c.ProcessBatch(t.Context(), message.Batch{
 		message.NewPart([]byte(`{"firstName":"John","lastName":"Doe","age":21}`)),
 	})
 	require.Len(t, msgs, 1)
@@ -141,7 +142,7 @@ json_schema:
 				t.Error(err)
 				return
 			}
-			msgs, _ := c.ProcessBatch(context.Background(), message.QuickBatch(tt.arg))
+			msgs, _ := c.ProcessBatch(t.Context(), message.QuickBatch(tt.arg))
 
 			if len(msgs) != 1 {
 				t.Fatalf("Test '%v' did not succeed", tt.name)
@@ -233,7 +234,7 @@ json_schema:
 				t.Error(err)
 				return
 			}
-			msgs, _ := c.ProcessBatch(context.Background(), message.QuickBatch(tt.arg))
+			msgs, _ := c.ProcessBatch(t.Context(), message.QuickBatch(tt.arg))
 
 			if len(msgs) != 1 {
 				t.Fatalf("Test '%v' did not succeed", tt.name)
@@ -338,7 +339,7 @@ json_schema:
 				t.Error(err)
 				return
 			}
-			msgs, _ := c.ProcessBatch(context.Background(), message.QuickBatch(tt.arg))
+			msgs, _ := c.ProcessBatch(t.Context(), message.QuickBatch(tt.arg))
 
 			if len(msgs) != 1 {
 				t.Fatalf("Test '%v' did not succeed", tt.name)
@@ -377,7 +378,7 @@ func TestJSONSchemaInvalidSchema(t *testing.T) {
 		"type": "any"
 	}`
 
-	tmpSchemaFile, err := os.CreateTemp("", "benthos_jsonschema_invalid_schema_test")
+	tmpSchemaFile, err := os.CreateTemp(t.TempDir(), "benthos_jsonschema_invalid_schema_test")
 	if err != nil {
 		t.Fatal(err)
 	}

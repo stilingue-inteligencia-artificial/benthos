@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracing
 
 import (
@@ -6,8 +8,9 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type tracedInput struct {
@@ -64,12 +67,23 @@ func (t *tracedInput) loop() {
 	}
 }
 
+func (t *tracedInput) TriggerStartConsuming() {
+	// Note: we aren't performing any connections within this component, and so
+	// it is fine to push this signal through to the child with our own loop
+	// already initialized.
+	t.wrapped.TriggerStartConsuming()
+}
+
 func (t *tracedInput) TransactionChan() <-chan message.Transaction {
 	return t.tChan
 }
 
-func (t *tracedInput) Connected() bool {
-	return t.wrapped.Connected()
+func (t *tracedInput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return t.wrapped.ConnectionTest(ctx)
+}
+
+func (t *tracedInput) ConnectionStatus() component.ConnectionStatuses {
+	return t.wrapped.ConnectionStatus()
 }
 
 func (t *tracedInput) TriggerStopConsuming() {

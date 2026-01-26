@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -12,10 +14,11 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -40,7 +43,7 @@ func sequenceInputSpec() *service.ConfigSpec {
 					Description("The type of join to perform. A `full-outer` ensures that all identifiers seen in any of the input sequences are sent, and is performed by consuming all input sequences before flushing the joined results. An `outer` join consumes all input sequences but only writes data joined from the last input in the sequence, similar to a left or right outer join. With an `outer` join if an identifier appears multiple times within the final sequence input it will be flushed each time it appears. `full-outter` and `outter` have been deprecated in favour of `full-outer` and `outer`.").
 					Default("none"),
 				service.NewStringField(siFieldShardedJoinIDPath).
-					Description("A [dot path](/docs/configuration/field_paths) that points to a common field within messages of each fragmented data set and can be used to join them. Messages that are not structured or are missing this field will be dropped. This field must be set in order to enable joins.").
+					Description("A xref:configuration:field_paths.adoc[dot path] that points to a common field within messages of each fragmented data set and can be used to join them. Messages that are not structured or are missing this field will be dropped. This field must be set in order to enable joins.").
 					Default(""),
 				service.NewIntField(siFieldShardedJoinIterations).
 					Description("The total number of iterations (shards), increasing this number will increase the overall time taken to process the data, but reduces the memory used in the process. The real memory usage required is significantly higher than the real size of the data and therefore the number of iterations should be at least an order of magnitude higher than the available memory divided by the overall size of the dataset.").
@@ -77,7 +80,7 @@ input:
 		).
 		Example(
 			"Joining Data (Simple)",
-			`Benthos can be used to join unordered data from fragmented datasets in memory by specifying a common identifier field and a number of sharded iterations. For example, given two CSV files, the first called "main.csv", which contains rows of user data:
+			`Redpanda Connect can be used to join unordered data from fragmented datasets in memory by specifying a common identifier field and a number of sharded iterations. For example, given two CSV files, the first called "main.csv", which contains rows of user data:
 
 `+"```csv"+`
 uuid,name,age
@@ -175,7 +178,7 @@ input:
 }
 
 func init() {
-	err := service.RegisterBatchInput("sequence", sequenceInputSpec(),
+	service.MustRegisterBatchInput("sequence", sequenceInputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 			i, err := newSequenceInputFromParsed(conf, mgr)
 			if err != nil {
@@ -183,9 +186,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalInput(i), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -338,7 +338,8 @@ type sequenceInput struct {
 
 	transactions chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 type sequenceTarget struct {
@@ -382,7 +383,6 @@ func newSequenceInputFromParsed(conf *service.ParsedConfig, res *service.Resourc
 		return nil, errors.New("failed to initialize first input")
 	}
 
-	go rdr.loop()
 	return rdr, nil
 }
 
@@ -401,7 +401,7 @@ func shardedConfigFromParsed(conf *service.ParsedConfig) (*messageJoiner, error)
 	case "outer", "outter":
 		flushOnLast = true
 	default:
-		return nil, fmt.Errorf("join type '%v' was not recognized", typeStr)
+		return nil, fmt.Errorf("join type '%v' was not recognised", typeStr)
 	}
 
 	idPath, _ := conf.FieldString(siFieldShardedJoinIDPath)
@@ -450,6 +450,7 @@ func (r *sequenceInput) createNextTarget() (input.Streamed, bool, error) {
 	var err error
 
 	r.targetMut.Lock()
+	defer r.targetMut.Unlock()
 	r.target = nil
 	if len(r.remaining) > 0 {
 		next := r.remaining[0]
@@ -463,10 +464,10 @@ func (r *sequenceInput) createNextTarget() (input.Streamed, bool, error) {
 	}
 	if target != nil {
 		r.log.Debugf("Initialized sequence input %v.", len(r.spent)-1)
+		target.TriggerStartConsuming()
 		r.target = target
 	}
 	final := len(r.remaining) == 0
-	r.targetMut.Unlock()
 
 	return target, final, err
 }
@@ -602,11 +603,24 @@ func (r *sequenceInput) TransactionChan() <-chan message.Transaction {
 	return r.transactions
 }
 
-func (r *sequenceInput) Connected() bool {
+func (r *sequenceInput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
 	if t, _ := r.getTarget(); t != nil {
-		return t.Connected()
+		return t.ConnectionTest(ctx)
 	}
-	return false
+	return nil
+}
+
+func (r *sequenceInput) ConnectionStatus() component.ConnectionStatuses {
+	if t, _ := r.getTarget(); t != nil {
+		return t.ConnectionStatus()
+	}
+	return nil
+}
+
+func (r *sequenceInput) TriggerStartConsuming() {
+	r.startOnce.Do(func() {
+		go r.loop()
+	})
 }
 
 func (r *sequenceInput) TriggerStopConsuming() {

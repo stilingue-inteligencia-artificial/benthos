@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -16,11 +18,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 var _ output.Streamed = &fallbackBroker{}
@@ -61,6 +64,8 @@ fallback:
 	sendChan := make(chan message.Transaction)
 	resChan := make(chan error)
 	require.NoError(t, s.Consume(sendChan))
+
+	s.TriggerStartConsuming()
 
 	t.Cleanup(func() {
 		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
@@ -124,7 +129,7 @@ func TestFallbackDoubleClose(t *testing.T) {
 //------------------------------------------------------------------------------
 
 func TestFallbackHappyPath(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	outputs := []output.Streamed{}
@@ -150,6 +155,8 @@ func TestFallbackHappyPath(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	oTM.TriggerStartConsuming()
 
 	for i := 0; i < 10; i++ {
 		content := [][]byte{[]byte(fmt.Sprintf("hello world %v", i))}
@@ -196,7 +203,7 @@ func TestFallbackHappyPath(t *testing.T) {
 }
 
 func TestFallbackHappyishPath(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	outputs := []output.Streamed{}
@@ -217,6 +224,8 @@ func TestFallbackHappyishPath(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, oTM.Consume(readChan))
+
+	oTM.TriggerStartConsuming()
 
 	for i := 0; i < 10; i++ {
 		content := [][]byte{[]byte(fmt.Sprintf("hello world %v", i))}
@@ -283,7 +292,7 @@ func TestFallbackHappyishPath(t *testing.T) {
 }
 
 func TestFallbackAllFail(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	outputs := []output.Streamed{}
@@ -307,6 +316,8 @@ func TestFallbackAllFail(t *testing.T) {
 	if err = oTM.Consume(readChan); err != nil {
 		t.Fatal(err)
 	}
+
+	oTM.TriggerStartConsuming()
 
 	for i := 0; i < 10; i++ {
 		content := [][]byte{[]byte(fmt.Sprintf("hello world %v", i))}
@@ -356,7 +367,7 @@ func TestFallbackAllFail(t *testing.T) {
 }
 
 func TestFallbackAllFailParallel(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	outputs := []output.Streamed{}
@@ -379,6 +390,8 @@ func TestFallbackAllFailParallel(t *testing.T) {
 	if err = oTM.Consume(readChan); err != nil {
 		t.Fatal(err)
 	}
+
+	oTM.TriggerStartConsuming()
 
 	resChans := make([]chan error, 10)
 	for i := range resChans {
@@ -437,4 +450,84 @@ func TestFallbackAllFailParallel(t *testing.T) {
 
 	close(readChan)
 	require.NoError(t, oTM.WaitForClose(tCtx))
+}
+
+type foobarInput struct {
+	ackChan chan<- struct{}
+}
+
+func newFoobarInput(ackChan chan struct{}) *foobarInput {
+	return &foobarInput{
+		ackChan: ackChan,
+	}
+}
+
+func (i *foobarInput) Connect(context.Context) error { return nil }
+
+func (i *foobarInput) Read(context.Context) (*service.Message, service.AckFunc, error) {
+	return service.NewMessage([]byte("foobar")), func(_ context.Context, err error) error {
+		i.ackChan <- struct{}{}
+		return nil
+	}, nil
+}
+
+func (i *foobarInput) Close(context.Context) error { return nil }
+
+func TestFallbackFailShutdown(t *testing.T) {
+	ackChan := make(chan struct{})
+
+	err := service.RegisterInput("foobar", service.NewConfigSpec(),
+		func(_ *service.ParsedConfig, mgr *service.Resources) (service.Input, error) {
+			return newFoobarInput(ackChan), nil
+		},
+	)
+	require.NoError(t, err)
+
+	sb := service.NewStreamBuilder()
+	require.NoError(t, sb.AddInputYAML(`
+foobar: {}
+`))
+
+	// Configure a `fallback` with a sluggish DLQ output
+	require.NoError(t, sb.AddOutputYAML(`
+fallback:
+  - reject: "kaboom"
+  - drop: {}
+    processors:
+      - sleep:
+          duration: 1s
+`))
+
+	s, err := sb.Build()
+	require.NoError(t, err)
+
+	stopChan := make(chan struct{})
+	go func() {
+		err = s.Run(t.Context())
+		require.NoError(t, err)
+
+		close(stopChan)
+	}()
+
+	// Explicitly wait for the first ack to ensure the stream is running.
+	// We're not using `AddConsumerFunc` because it will wrap the output in a broker which can make the shutdown logic
+	// behave differently.
+	<-ackChan
+
+	// Ack messages as fast as possible
+	go func() {
+		for {
+			<-ackChan
+		}
+	}()
+
+	err = s.StopWithin(2 * time.Second)
+	require.NoError(t, err)
+
+	// Make sure the stream has stopped
+	select {
+	case <-stopChan:
+	case <-time.After(1 * time.Second):
+		require.Fail(t, "timed out waiting for stream to stop")
+	}
 }

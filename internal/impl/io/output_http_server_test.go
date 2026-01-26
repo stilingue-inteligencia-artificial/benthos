@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io_test
 
 import (
@@ -9,10 +11,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func parseYAMLOutputConf(t testing.TB, formatStr string, args ...any) (conf output.Config) {
@@ -24,7 +26,7 @@ func parseYAMLOutputConf(t testing.TB, formatStr string, args ...any) (conf outp
 }
 
 func TestHTTPServerOutputBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	nTestLoops := 10
@@ -49,6 +51,8 @@ http_server:
 	if err = h.Consume(msgChan); err == nil {
 		t.Error("Expected error from double listen")
 	}
+
+	h.TriggerStartConsuming()
 
 	<-time.After(time.Millisecond * 100)
 
@@ -91,7 +95,7 @@ http_server:
 }
 
 func TestHTTPServerOutputBadRequests(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	port := getFreePort(t)
@@ -111,6 +115,8 @@ http_server:
 		return
 	}
 
+	h.TriggerStartConsuming()
+
 	<-time.After(time.Millisecond * 100)
 
 	h.TriggerCloseNow()
@@ -123,7 +129,7 @@ http_server:
 }
 
 func TestHTTPServerOutputTimeout(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	port := getFreePort(t)
@@ -143,6 +149,8 @@ http_server:
 		t.Error(err)
 		return
 	}
+
+	h.TriggerStartConsuming()
 
 	<-time.After(time.Millisecond * 100)
 

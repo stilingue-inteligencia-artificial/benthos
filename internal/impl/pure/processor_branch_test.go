@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -10,11 +12,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	log_testutil "github.com/redpanda-data/benthos/v4/internal/log/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestBranchBasic(t *testing.T) {
@@ -230,7 +233,7 @@ branch:
 				msg = append(msg, part)
 			}
 
-			outMsgs, res := proc.ProcessBatch(context.Background(), msg.ShallowCopy())
+			outMsgs, res := proc.ProcessBatch(t.Context(), msg.ShallowCopy())
 
 			require.NoError(t, res)
 			require.Len(t, outMsgs, 1)
@@ -267,9 +270,45 @@ branch:
 				assert.Equal(t, m.content, string(msg.Get(i).AsBytes()))
 			}
 
-			ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+			ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 			defer done()
 			assert.NoError(t, proc.Close(ctx))
 		})
 	}
+}
+
+func TestBranchLogging(t *testing.T) {
+	conf, err := testutil.ProcessorFromYAML(`
+branch:
+  processors:
+    - mapping: |
+        root = throw("kaboom!")
+`)
+	require.NoError(t, err)
+
+	log := log_testutil.MockLog{}
+	mgr := mock.NewManager()
+	mgr.L = &log
+
+	proc, err := mgr.NewProcessor(conf)
+	require.NoError(t, err)
+
+	msg := message.QuickBatch(nil)
+
+	part := message.NewPart([]byte(""))
+	msg = append(msg, part)
+
+	outMsgs, res := proc.ProcessBatch(t.Context(), msg.ShallowCopy())
+	require.NoError(t, res)
+	assert.Len(t, outMsgs, 1)
+
+	assert.Len(t, log.Debugs, 2)
+	assert.Equal(t, "Processor failed: failed assignment (line 1): kaboom!", log.Debugs[0])
+	assert.Equal(t, "Branch error: processors failed: failed assignment (line 1): kaboom!", log.Debugs[1])
+	require.Len(t, log.Errors, 1)
+	assert.Equal(t, "failed assignment (line 1): kaboom!", log.Errors[0])
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second*1)
+	defer done()
+	assert.NoError(t, proc.Close(ctx))
 }

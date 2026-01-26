@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package stream_test
 
 import (
@@ -11,13 +13,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestTypeConstruction(t *testing.T) {
@@ -38,7 +40,9 @@ output:
 	strm, err := stream.New(conf, newMgr)
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	strm.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	assert.NoError(t, strm.Stop(ctx))
@@ -48,6 +52,8 @@ output:
 
 	strm, err = stream.New(conf, newMgr)
 	require.NoError(t, err)
+
+	strm.TriggerStartConsuming()
 
 	require.NoError(t, strm.Stop(ctx))
 }
@@ -71,10 +77,12 @@ output:
 	strm, err := stream.New(conf, newMgr)
 	require.NoError(t, err)
 
+	strm.TriggerStartConsuming()
+
 	tChan, err := newMgr.GetPipe("foo")
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	var tTmp message.Transaction
@@ -107,15 +115,21 @@ output:
 	newMgr, err := manager.New(manager.NewResourceConfig())
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	strm, err := stream.New(conf, newMgr)
 	require.NoError(t, err)
+
+	strm.TriggerStartConsuming()
+
 	assert.NoError(t, strm.StopGracefully(ctx))
 
 	strm, err = stream.New(conf, newMgr)
 	require.NoError(t, err)
+
+	strm.TriggerStartConsuming()
+
 	assert.NoError(t, strm.StopGracefully(ctx))
 
 	conf.Pipeline.Processors = []processor.Config{
@@ -124,6 +138,9 @@ output:
 
 	strm, err = stream.New(conf, newMgr)
 	require.NoError(t, err)
+
+	strm.TriggerStartConsuming()
+
 	assert.NoError(t, strm.StopGracefully(ctx))
 }
 
@@ -142,15 +159,21 @@ output:
 	newMgr, err := manager.New(manager.NewResourceConfig())
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Minute)
+	ctx, done := context.WithTimeout(t.Context(), time.Minute)
 	defer done()
 
 	strm, err := stream.New(conf, newMgr)
 	require.NoError(t, err)
+
+	strm.TriggerStartConsuming()
+
 	assert.NoError(t, strm.StopUnordered(ctx))
 
 	strm, err = stream.New(conf, newMgr)
 	require.NoError(t, err)
+
+	strm.TriggerStartConsuming()
+
 	assert.NoError(t, strm.StopUnordered(ctx))
 
 	conf.Pipeline.Processors = []processor.Config{
@@ -159,6 +182,9 @@ output:
 
 	strm, err = stream.New(conf, newMgr)
 	require.NoError(t, err)
+
+	strm.TriggerStartConsuming()
+
 	assert.NoError(t, strm.StopUnordered(ctx))
 }
 
@@ -180,12 +206,14 @@ func newMockAPIReg() mockAPIReg {
 	}
 }
 
-func validateHealthCheckResponse(t *testing.T, serverURL, expectedResponse string) {
+func validateHealthCheckResponse(t *testing.T, serverURL string, expectedCode int, expectedResponse string) {
 	t.Helper()
 
 	res, err := http.Get(serverURL + "/ready")
 	require.NoError(t, err)
 	defer res.Body.Close()
+
+	assert.Equal(t, expectedCode, res.StatusCode)
 
 	data, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
@@ -212,7 +240,9 @@ output:
 	strm, err := stream.New(conf, newMgr)
 	require.NoError(t, err)
 
-	ctx, done := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	strm.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer done()
 	for !strm.IsReady() {
 		select {
@@ -222,12 +252,16 @@ output:
 		}
 	}
 
-	validateHealthCheckResponse(t, mockAPIReg.server.URL, "OK")
+	exp := `{"statuses":[{"label":"","path":"input","connected":true},{"label":"","path":"output","connected":true}]}
+`
+	validateHealthCheckResponse(t, mockAPIReg.server.URL, 200, exp)
 
-	stopCtx, stopDone := context.WithTimeout(context.Background(), time.Minute)
+	stopCtx, stopDone := context.WithTimeout(t.Context(), time.Minute)
 	defer stopDone()
 
 	assert.NoError(t, strm.StopUnordered(stopCtx))
 
-	validateHealthCheckResponse(t, mockAPIReg.server.URL, "Stream terminated\n")
+	exp = `{"error":"stream terminated","statuses":[{"label":"","path":"input","connected":false},{"label":"","path":"output","connected":false}]}
+`
+	validateHealthCheckResponse(t, mockAPIReg.server.URL, http.StatusServiceUnavailable, exp)
 }

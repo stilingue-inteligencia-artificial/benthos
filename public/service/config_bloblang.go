@@ -1,11 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"fmt"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 // NewBloblangField defines a new config field that describes a Bloblang mapping

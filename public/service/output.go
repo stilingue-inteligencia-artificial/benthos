@@ -1,12 +1,18 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/output/batcher"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // Output is an interface implemented by Benthos outputs that support single
@@ -72,15 +78,24 @@ type BatchOutput interface {
 
 // Implements output.AsyncSink.
 type airGapWriter struct {
+	o bundle.NewManagement
 	w Output
 }
 
-func newAirGapWriter(w Output) output.AsyncSink {
-	return &airGapWriter{w: w}
+func newAirGapWriter(o bundle.NewManagement, w Output) output.AsyncSink {
+	return &airGapWriter{w: w, o: o}
+}
+
+func (a *airGapWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	t, ok := a.w.(ConnectionTestable)
+	if !ok {
+		return component.ConnectionTestNotSupported(a.o).AsList()
+	}
+	return t.ConnectionTest(ctx).intoInternal(a.o)
 }
 
 func (a *airGapWriter) Connect(ctx context.Context) error {
-	return a.w.Connect(ctx)
+	return publicToInternalErr(a.w.Connect(ctx))
 }
 
 func (a *airGapWriter) WriteBatch(ctx context.Context, msg message.Batch) error {
@@ -88,22 +103,31 @@ func (a *airGapWriter) WriteBatch(ctx context.Context, msg message.Batch) error 
 }
 
 func (a *airGapWriter) Close(ctx context.Context) error {
-	return a.w.Close(ctx)
+	return publicToInternalErr(a.w.Close(ctx))
 }
 
 //------------------------------------------------------------------------------
 
 // Implements output.AsyncSink.
 type airGapBatchWriter struct {
+	o bundle.NewManagement
 	w BatchOutput
 }
 
-func newAirGapBatchWriter(w BatchOutput) output.AsyncSink {
-	return &airGapBatchWriter{w: w}
+func newAirGapBatchWriter(o bundle.NewManagement, w BatchOutput) output.AsyncSink {
+	return &airGapBatchWriter{w: w, o: o}
+}
+
+func (a *airGapBatchWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	t, ok := a.w.(ConnectionTestable)
+	if !ok {
+		return component.ConnectionTestNotSupported(a.o).AsList()
+	}
+	return t.ConnectionTest(ctx).intoInternal(a.o)
 }
 
 func (a *airGapBatchWriter) Connect(ctx context.Context) error {
-	return a.w.Connect(ctx)
+	return publicToInternalErr(a.w.Connect(ctx))
 }
 
 func (a *airGapBatchWriter) WriteBatch(ctx context.Context, msg message.Batch) error {
@@ -116,7 +140,7 @@ func (a *airGapBatchWriter) WriteBatch(ctx context.Context, msg message.Batch) e
 }
 
 func (a *airGapBatchWriter) Close(ctx context.Context) error {
-	return a.w.Close(context.Background())
+	return publicToInternalErr(a.w.Close(ctx))
 }
 
 //------------------------------------------------------------------------------
@@ -128,6 +152,11 @@ type ResourceOutput struct {
 
 func newResourceOutput(o output.Sync) *ResourceOutput {
 	return &ResourceOutput{o: o}
+}
+
+// ConnectionTest attempts to run a connection test on the resource output.
+func (r *ResourceOutput) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	return connectionTestResultsFromInternal(r.o.ConnectionTest(ctx))
 }
 
 // Write a message to the output, or return an error either if delivery is not
@@ -148,6 +177,8 @@ func (o *ResourceOutput) WriteBatch(ctx context.Context, b MessageBatch) error {
 }
 
 func (o *ResourceOutput) writeMsg(ctx context.Context, payload message.Batch) error {
+	o.o.TriggerStartConsuming()
+
 	var wg sync.WaitGroup
 	var ackErr error
 	wg.Add(1)
@@ -183,6 +214,19 @@ func newOwnedOutput(o output.Streamed) (*OwnedOutput, error) {
 	}, nil
 }
 
+// BatchedWith returns a copy of the OwnedOutput where messages will be batched
+// according to the provided batcher.
+func (o *OwnedOutput) BatchedWith(b *Batcher) *OwnedOutput {
+	return &OwnedOutput{
+		o: batcher.New(b.p, o.o, b.mgr),
+	}
+}
+
+// ConnectionTest attempts to run a connection test on the owned output.
+func (o *OwnedOutput) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	return connectionTestResultsFromInternal(o.o.ConnectionTest(ctx))
+}
+
 // Prime attempts to establish the output connection ready for consuming data.
 // This is done automatically once data is written. However, pre-emptively
 // priming the connection before data is received is generally a better idea for
@@ -195,6 +239,29 @@ func (o *OwnedOutput) Prime() error {
 	if err := o.o.Consume(tChan); err != nil {
 		return err
 	}
+
+	o.o.TriggerStartConsuming() // This is safe to call multiple times
+
+	o.t.Store(&tChan)
+	return nil
+}
+
+// PrimeBuffered performs the same output preparation as Prime but the internal
+// transaction channel used for delivering data is buffered with the provided
+// size. This allows for multiple write transactions to be written to the buffer
+// and may improve the chance of delivery when using the WriteBatchNonBlocking
+// method.
+func (o *OwnedOutput) PrimeBuffered(n int) error {
+	o.primeMut.Lock()
+	defer o.primeMut.Unlock()
+
+	tChan := make(chan message.Transaction, n)
+	if err := o.o.Consume(tChan); err != nil {
+		return err
+	}
+
+	o.o.TriggerStartConsuming() // This is safe to call multiple times
+
 	o.t.Store(&tChan)
 	return nil
 }
@@ -262,6 +329,41 @@ func (o *OwnedOutput) WriteBatch(ctx context.Context, b MessageBatch) error {
 	}
 }
 
+// ErrBlockingWrite is returned when a non-blocking write is aborted
+var ErrBlockingWrite = errors.New("a blocking write attempt was aborted")
+
+// WriteBatchNonBlocking attempts to write a message batch to the output, but if
+// the write is blocked (the read channel is full or not being listened to) then
+// the write is aborted immediately in order to prevent blocking the caller.
+//
+// Instead of blocking until an acknowledgement of delivery is returned this
+// method returns immediately and the provided acknowledgement function is
+// called when appropriate.
+//
+// If the write is aborted then ErrBlockingWrite is returned. An error may also
+// be returned if the output cannot be primed.
+func (o *OwnedOutput) WriteBatchNonBlocking(b MessageBatch, aFn AckFunc) error {
+	t, err := o.getTChan()
+	if err != nil {
+		return err
+	}
+
+	payload := make(message.Batch, len(b))
+	for i, m := range b {
+		payload[i] = m.part
+	}
+
+	select {
+	case t <- message.NewTransactionFunc(payload, func(ctx context.Context, err error) error {
+		err = toPublicBatchError(err)
+		return aFn(ctx, err)
+	}):
+	default:
+		return ErrBlockingWrite
+	}
+	return nil
+}
+
 // Close the output.
 func (o *OwnedOutput) Close(ctx context.Context) error {
 	o.closeOnce.Do(func() {
@@ -284,3 +386,51 @@ func (w outputUnwrapper) Unwrap() output.Streamed {
 func (o *OwnedOutput) XUnwrapper() any {
 	return outputUnwrapper{o: o.o}
 }
+
+//------------------------------------------------------------------------------
+
+var docsAsync = `
+This output benefits from sending multiple messages in flight in parallel for improved performance. You can tune the max number of in flight messages (or message batches) with the field ` + "`max_in_flight`" + `.`
+
+var docsBatches = `
+This output benefits from sending messages as a batch for improved performance. Batches can be formed at both the input and output level. You can find out more xref:configuration:batching.adoc[in this doc].`
+
+// OutputPerformanceDocs returns a string of markdown documentation that can be
+// added to outputs as standard performance advice based on whether the output
+// benefits from a max_in_flight field, batching or both.
+func OutputPerformanceDocs(benefitsFromMaxInFlight, benefitsFromBatching bool) (content string) {
+	if !benefitsFromMaxInFlight && !benefitsFromBatching {
+		return
+	}
+	content += "\n\n== Performance"
+	if benefitsFromMaxInFlight {
+		content += "\n" + docsAsync
+	}
+	if benefitsFromBatching {
+		content += "\n" + docsBatches
+	}
+	return content
+}
+
+//------------------------------------------------------------------------------
+
+// OutputBrokerPatternType describes the brokering pattern type for a broker output.
+type OutputBrokerPatternType string
+
+const (
+	// OutputBrokerPatternFanOut sends each message to all outputs in parallel.
+	OutputBrokerPatternFanOut OutputBrokerPatternType = "fan_out"
+	// OutputBrokerPatternFanOutFailFast sends each message to all outputs in parallel and output failures will not be
+	// automatically retried.
+	OutputBrokerPatternFanOutFailFast OutputBrokerPatternType = "fan_out_fail_fast"
+	// OutputBrokerPatternFanOutSequential sends each message to all outputs sequentially.
+	OutputBrokerPatternFanOutSequential OutputBrokerPatternType = "fan_out_sequential"
+	// OutputBrokerPatternFanOutSequentialFailFast sends each message to all outputs sequentially and output failures
+	// will not be automatically retried.
+	OutputBrokerPatternFanOutSequentialFailFast OutputBrokerPatternType = "fan_out_sequential_fail_fast"
+	// OutputBrokerPatternRoundRobin sends each message to a single output following their order.
+	OutputBrokerPatternRoundRobin OutputBrokerPatternType = "round_robin"
+	// OutputBrokerPatternGreedy sends each message to a single output, which is determined by allowing outputs to claim
+	// messages as soon as they are able to process them.
+	OutputBrokerPatternGreedy OutputBrokerPatternType = "greedy"
+)

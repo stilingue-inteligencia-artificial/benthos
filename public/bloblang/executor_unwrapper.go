@@ -1,6 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bloblang
 
-import "github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
+import "github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
 
 type executorUnwrapper struct {
 	child *mapping.Executor

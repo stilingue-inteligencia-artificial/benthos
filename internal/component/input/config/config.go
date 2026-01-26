@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 // Package config contains reusable config definitions and parsers for inputs
 // defined via the public/service package. We could eventually consider moving
 // this out into public/service for others to use.
@@ -8,8 +10,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 // Connection fields

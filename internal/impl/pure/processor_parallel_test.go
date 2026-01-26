@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,12 +15,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func parseYAMLConf(t testing.TB, formatStr string, args ...any) (conf processor.Config) {
@@ -52,7 +53,7 @@ parallel:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{
 		[]byte("foo"),
 		[]byte("bar"),
 		[]byte("baz"),
@@ -99,7 +100,7 @@ parallel:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{
 		[]byte("foo"),
 		[]byte("bar"),
 		[]byte("baz"),
@@ -149,7 +150,7 @@ parallel:
 		t.Fatal(err)
 	}
 
-	msgs, res := h.ProcessBatch(context.Background(), message.QuickBatch([][]byte{
+	msgs, res := h.ProcessBatch(t.Context(), message.QuickBatch([][]byte{
 		[]byte("foo"),
 		[]byte("bar"),
 		[]byte("baz"),

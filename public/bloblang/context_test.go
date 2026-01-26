@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package bloblang_test
 
 import (
@@ -6,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 func TestFunctionContext(t *testing.T) {

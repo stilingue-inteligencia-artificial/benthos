@@ -1,24 +1,26 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"sync"
 
 	"github.com/gorilla/websocket"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/input/config"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/httpclient"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/input/config"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 type wsOpenMsgType string
@@ -40,6 +42,9 @@ func websocketInputSpec() *service.ConfigSpec {
 			service.NewURLField("url").
 				Description("The URL to connect to.").
 				Example("ws://localhost:4195/get/ws"),
+			service.NewURLField("proxy_url").
+				Description("An optional HTTP proxy URL.").
+				Advanced().Optional(),
 			service.NewStringField("open_message").
 				Description("An optional message to send to the server upon connection.").
 				Advanced().Optional(),
@@ -52,11 +57,11 @@ func websocketInputSpec() *service.ConfigSpec {
 			service.NewTLSToggledField("tls"),
 		).
 		Fields(config.AsyncOptsFields()...).
-		Fields(httpclient.AuthFieldSpecs()...)
+		Fields(service.NewHTTPRequestAuthSignerFields()...)
 }
 
 func init() {
-	err := service.RegisterBatchInput(
+	service.MustRegisterBatchInput(
 		"websocket", websocketInputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (in service.BatchInput, err error) {
 			oldMgr := interop.UnwrapManagement(mgr)
@@ -81,9 +86,6 @@ func init() {
 			in = interop.NewUnwrapInternalInput(i)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type websocketReader struct {
@@ -92,12 +94,13 @@ type websocketReader struct {
 
 	lock *sync.Mutex
 
-	client     *websocket.Conn
-	urlParsed  *url.URL
-	urlStr     string
-	tlsEnabled bool
-	tlsConf    *tls.Config
-	reqSigner  httpclient.RequestSigner
+	client         *websocket.Conn
+	urlParsed      *url.URL
+	urlStr         string
+	proxyURLParsed *url.URL
+	tlsEnabled     bool
+	tlsConf        *tls.Config
+	reqSigner      func(f fs.FS, req *http.Request) error
 
 	openMsgType wsOpenMsgType
 	openMsg     []byte
@@ -116,10 +119,15 @@ func newWebsocketReaderFromParsed(conf *service.ParsedConfig, mgr bundle.NewMana
 	if ws.urlStr, err = conf.FieldString("url"); err != nil {
 		return nil, err
 	}
+	if conf.Contains("proxy_url") {
+		if ws.proxyURLParsed, err = conf.FieldURL("proxy_url"); err != nil {
+			return nil, err
+		}
+	}
 	if ws.tlsConf, ws.tlsEnabled, err = conf.FieldTLSToggled("tls"); err != nil {
 		return nil, err
 	}
-	if ws.reqSigner, err = httpclient.AuthSignerFromParsed(conf); err != nil {
+	if ws.reqSigner, err = conf.HTTPRequestAuthSignerFromParsed(); err != nil {
 		return nil, err
 	}
 	var openMsgStr, openMsgTypeStr string
@@ -140,14 +148,7 @@ func (w *websocketReader) getWS() *websocket.Conn {
 	return ws
 }
 
-func (w *websocketReader) Connect(ctx context.Context) error {
-	w.lock.Lock()
-	defer w.lock.Unlock()
-
-	if w.client != nil {
-		return nil
-	}
-
+func (w *websocketReader) getConn(ctx context.Context) (*websocket.Conn, error) {
 	headers := http.Header{}
 
 	err := w.reqSigner(w.mgr.FS(), &http.Request{
@@ -155,7 +156,7 @@ func (w *websocketReader) Connect(ctx context.Context) error {
 		Header: headers,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var (
@@ -169,14 +170,43 @@ func (w *websocketReader) Connect(ctx context.Context) error {
 		}
 	}()
 
+	dialer := *websocket.DefaultDialer
+	if w.proxyURLParsed != nil {
+		dialer.Proxy = http.ProxyURL(w.proxyURLParsed)
+	}
+
 	if w.tlsEnabled {
-		dialer := websocket.Dialer{
-			TLSClientConfig: w.tlsConf,
-		}
+		dialer.TLSClientConfig = w.tlsConf
 		if client, res, err = dialer.Dial(w.urlStr, headers); err != nil {
-			return err
+			return nil, err
 		}
-	} else if client, res, err = websocket.DefaultDialer.Dial(w.urlStr, headers); err != nil {
+	} else if client, res, err = dialer.Dial(w.urlStr, headers); err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+func (w *websocketReader) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	client, err := w.getConn(ctx)
+	if err != nil {
+		return component.ConnectionTestFailed(w.mgr, err).AsList()
+	}
+
+	_ = client.Close()
+	return component.ConnectionTestSucceeded(w.mgr).AsList()
+}
+
+func (w *websocketReader) Connect(ctx context.Context) error {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+
+	if w.client != nil {
+		return nil
+	}
+
+	client, err := w.getConn(ctx)
+	if err != nil {
 		return err
 	}
 
@@ -187,11 +217,13 @@ func (w *websocketReader) Connect(ctx context.Context) error {
 	case wsOpenMsgTypeText:
 		openMsgType = websocket.TextMessage
 	default:
+		_ = client.Close()
 		return fmt.Errorf("unrecognised open_message_type: %s", w.openMsgType)
 	}
 
 	if len(w.openMsg) > 0 {
 		if err := client.WriteMessage(openMsgType, w.openMsg); err != nil {
+			_ = client.Close()
 			return err
 		}
 	}

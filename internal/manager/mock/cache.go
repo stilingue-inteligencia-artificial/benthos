@@ -1,11 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package mock
 
 import (
 	"context"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
 )
 
 // CacheItem represents a cached key/ttl pair.

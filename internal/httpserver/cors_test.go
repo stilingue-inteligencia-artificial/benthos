@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package httpserver
 
 import (
@@ -74,7 +76,7 @@ func TestAPIEnableCORSOrigins(t *testing.T) {
 	handler.ServeHTTP(response, request)
 
 	assert.Equal(t, http.StatusOK, response.Code)
-	assert.Equal(t, "", response.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, response.Header().Get("Access-Control-Allow-Origin"))
 }
 
 func TestAPIEnableCORSNoHeaders(t *testing.T) {

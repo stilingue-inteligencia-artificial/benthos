@@ -1,10 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package output
 
 import (
 	"context"
 
-	iprocessor "github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	iprocessor "github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // WithPipeline is a type that wraps both an output type and a pipeline type
@@ -51,13 +54,26 @@ func (i *WithPipeline) Consume(tsChan <-chan message.Transaction) error {
 	return i.pipe.Consume(tsChan)
 }
 
-// Connected returns a boolean indicating whether this output is currently
-// connected to its target.
-func (i *WithPipeline) Connected() bool {
-	return i.out.Connected()
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (i *WithPipeline) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return i.out.ConnectionTest(ctx)
+}
+
+// ConnectionStatus returns the current status of the given component
+// connection. The result is a slice in order to accommodate higher order
+// components that wrap several others.
+func (i *WithPipeline) ConnectionStatus() component.ConnectionStatuses {
+	return i.out.ConnectionStatus()
 }
 
 //------------------------------------------------------------------------------
+
+// TriggerStartConsuming initiates async connection and consumption.
+func (i *WithPipeline) TriggerStartConsuming() {
+	i.out.TriggerStartConsuming()
+}
 
 // TriggerCloseNow triggers a closure of this object but does not block.
 func (i *WithPipeline) TriggerCloseNow() {

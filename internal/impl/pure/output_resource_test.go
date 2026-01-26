@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -10,13 +12,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestResourceOutput(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	var outLock sync.Mutex
@@ -37,10 +39,12 @@ func TestResourceOutput(t *testing.T) {
 	p, err := mgr.NewOutput(nConf)
 	require.NoError(t, err)
 
-	assert.True(t, p.Connected())
+	assert.True(t, p.ConnectionStatus().AllActive())
 
 	tChan := make(chan message.Transaction)
 	assert.NoError(t, p.Consume(tChan))
+
+	p.TriggerStartConsuming()
 
 	for i := 0; i < 10; i++ {
 		msg := fmt.Sprintf("foo:%v", i)

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package batcher_test
 
 import (
@@ -12,12 +14,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	batchInternal "github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/batch/policy/batchconfig"
-	"github.com/benthosdev/benthos/v4/internal/component/output/batcher"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	batchInternal "github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy/batchconfig"
+	"github.com/redpanda-data/benthos/v4/internal/component/output/batcher"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestBatcherEarlyTermination(t *testing.T) {
@@ -35,7 +37,9 @@ func TestBatcherEarlyTermination(t *testing.T) {
 	b := batcher.New(batchPol, out, mock.NewManager())
 	require.NoError(t, b.Consume(tInChan))
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	b.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	done()
 
 	require.Error(t, b.WaitForClose(ctx))
@@ -46,7 +50,7 @@ func TestBatcherEarlyTermination(t *testing.T) {
 		t.Error("unexpected")
 	}
 
-	ctx, done = context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done = context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	require.Error(t, b.WaitForClose(ctx))
@@ -65,6 +69,8 @@ func TestBatcherBasic(t *testing.T) {
 
 	b := batcher.New(batchPol, out, mock.NewManager())
 	require.NoError(t, b.Consume(tInChan))
+
+	b.TriggerStartConsuming()
 
 	tOutChan := out.TChan
 
@@ -139,7 +145,7 @@ func TestBatcherBasic(t *testing.T) {
 	}()
 
 	sendResponse := func(tran message.Transaction, err error) {
-		sCtx, done := context.WithTimeout(context.Background(), time.Second)
+		sCtx, done := context.WithTimeout(t.Context(), time.Second)
 		defer done()
 		defer wg.Done()
 		require.NoError(t, tran.Ack(sCtx, err))
@@ -181,7 +187,7 @@ func TestBatcherBasic(t *testing.T) {
 		t.Fatal("Timed out waiting for message read")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, b.WaitForClose(ctx))
@@ -189,7 +195,7 @@ func TestBatcherBasic(t *testing.T) {
 }
 
 func TestBatcherMaxInFlight(t *testing.T) {
-	timeOutCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	timeOutCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	tInChan := make(chan message.Transaction)
@@ -203,6 +209,8 @@ func TestBatcherMaxInFlight(t *testing.T) {
 
 	b := batcher.New(batchPol, out, mock.NewManager())
 	require.NoError(t, b.Consume(tInChan))
+
+	b.TriggerStartConsuming()
 
 	tOutChan := out.TChan
 	resChanOne, resChanTwo := make(chan error), make(chan error)
@@ -265,7 +273,7 @@ func TestBatcherMaxInFlight(t *testing.T) {
 }
 
 func TestBatcherBatchError(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*20)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	tInChan := make(chan message.Transaction)
@@ -280,6 +288,8 @@ func TestBatcherBatchError(t *testing.T) {
 
 	b := batcher.New(batchPol, out, mock.NewManager())
 	require.NoError(t, b.Consume(tInChan))
+
+	b.TriggerStartConsuming()
 
 	tOutChan := out.TChan
 
@@ -340,7 +350,7 @@ func TestBatcherBatchError(t *testing.T) {
 	close(tInChan)
 	b.TriggerCloseNow()
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, b.WaitForClose(ctx))
@@ -364,6 +374,8 @@ func TestBatcherTimed(t *testing.T) {
 	if err := b.Consume(tInChan); err != nil {
 		t.Fatal(err)
 	}
+
+	b.TriggerStartConsuming()
 
 	tOutChan := out.TChan
 
@@ -390,7 +402,7 @@ func TestBatcherTimed(t *testing.T) {
 		t.Errorf("Wrong result from batch: %s != %s", act, exp)
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	close(tInChan)

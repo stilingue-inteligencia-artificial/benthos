@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -23,19 +25,20 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/api"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/httpserver"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/old/util/throttle"
-	"github.com/benthosdev/benthos/v4/internal/tracing"
-	"github.com/benthosdev/benthos/v4/internal/transaction"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/api"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/httpserver"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/old/util/throttle"
+	"github.com/redpanda-data/benthos/v4/internal/tracing"
+	"github.com/redpanda-data/benthos/v4/internal/transaction"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -162,27 +165,27 @@ func hsiSpec() *service.ConfigSpec {
 		Categories("Network").
 		Summary(`Receive messages POSTed over HTTP(S). HTTP 2.0 is supported when using TLS, which is enabled when key and cert files are specified.`).
 		Description(`
-If the `+"`address`"+` config field is left blank the [service-wide HTTP server](/docs/components/http/about) will be used.
+If the `+"`address`"+` config field is left blank the xref:components:http/about.adoc[service-wide HTTP server] will be used.
 
-The field `+"`rate_limit`"+` allows you to specify an optional `+"[`rate_limit` resource](/docs/components/rate_limits/about)"+`, which will be applied to each HTTP request made and each websocket payload received.
+The field `+"`rate_limit`"+` allows you to specify an optional `+"xref:components:rate_limits/about.adoc[`rate_limit` resource]"+`, which will be applied to each HTTP request made and each websocket payload received.
 
 When the rate limit is breached HTTP requests will have a 429 response returned with a Retry-After header. Websocket payloads will be dropped and an optional response payload will be sent as per `+"`ws_rate_limit_message`"+`.
 
-### Responses
+== Responses
 
-It's possible to return a response for each message received using [synchronous responses](/docs/guides/sync_responses). When doing so you can customise headers with the `+"`sync_response` field `headers`"+`, which can also use [function interpolation](/docs/configuration/interpolation#bloblang-queries) in the value based on the response message contents.
+It's possible to return a response for each message received using xref:guides:sync_responses.adoc[synchronous responses]. When doing so you can customize headers with the `+"`sync_response` field `headers`"+`, which can also use xref:configuration:interpolation.adoc#bloblang-queries[function interpolation] in the value based on the response message contents.
 
-### Endpoints
+== Endpoints
 
-The following fields specify endpoints that are registered for sending messages, and support path parameters of the form `+"`/{foo}`"+`, which are added to ingested messages as metadata. A path ending in `+"`/`"+` will match against all extensions of that path:
+The following fields specify endpoints that are registered for sending messages, and support path parameters of the form `+"`/\\{foo}`"+`, which are added to ingested messages as metadata. A path ending in `+"`/`"+` will match against all extensions of that path:
 
-#### `+"`path` (defaults to `/post`)"+`
+=== `+"`path` (defaults to `/post`)"+`
 
 This endpoint expects POST requests where the entire request body is consumed as a single message.
 
-If the request contains a multipart `+"`content-type`"+` header as per [rfc1341](https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html) then the multiple parts are consumed as a batch of messages, where each body part is a message of the batch.
+If the request contains a multipart `+"`content-type`"+` header as per https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html[RFC1341^] then the multiple parts are consumed as a batch of messages, where each body part is a message of the batch.
 
-#### `+"`ws_path` (defaults to `/post/ws`)"+`
+=== `+"`ws_path` (defaults to `/post/ws`)"+`
 
 Creates a websocket connection, where payloads received on the socket are passed through the pipeline as a batch of one message.
 
@@ -192,11 +195,11 @@ You may specify an optional `+"`ws_welcome_message`"+`, which is a static payloa
 
 It's also possible to specify a `+"`ws_rate_limit_message`"+`, which is a static payload to be sent to clients that have triggered the servers rate limit.
 
-### Metadata
+== Metadata
 
 This input adds the following metadata fields to each message:
 
-`+"``` text"+`
+`+"```text"+`
 - http_server_user_agent
 - http_server_request_path
 - http_server_verb
@@ -208,13 +211,13 @@ This input adds the following metadata fields to each message:
 `+"```"+`
 
 If HTTPS is enabled, the following fields are added as well:
-`+"``` text"+`
+`+"```text"+`
 - http_server_tls_version
 - http_server_tls_subject
 - http_server_tls_cipher_suite
 `+"```"+`
 
-You can access these metadata fields using [function interpolation](/docs/configuration/interpolation#bloblang-queries).`).
+You can access these metadata fields using xref:configuration:interpolation.adoc#bloblang-queries[function interpolation].`).
 		Fields(
 			service.NewStringField(hsiFieldAddress).
 				Description("An alternative address to host from. If left empty the service wide address is used.").
@@ -241,7 +244,7 @@ You can access these metadata fields using [function interpolation](/docs/config
 				Description("Timeout for requests. If a consumed messages takes longer than this to be delivered the connection is closed, but the message may still be delivered.").
 				Default("5s"),
 			service.NewStringField(hsiFieldRateLimit).
-				Description("An optional [rate limit](/docs/components/rate_limits/about) to throttle requests by.").
+				Description("An optional xref:components:rate_limits/about.adoc[rate limit] to throttle requests by.").
 				Default(""),
 			service.NewStringField(hsiFieldCertFile).
 				Description("Enable TLS by specifying a certificate and key file. Only valid with a custom `address`.").
@@ -265,7 +268,7 @@ You can access these metadata fields using [function interpolation](/docs/config
 				service.NewMetadataFilterField(hsiFieldResponseExtractMetadata).
 					Description("Specify criteria for which metadata values are added to the response as headers."),
 			).
-				Description("Customise messages returned via [synchronous responses](/docs/guides/sync_responses).").
+				Description("Customize messages returned via xref:guides:sync_responses.adoc[synchronous responses].").
 				Advanced(),
 		).
 		Example(
@@ -323,7 +326,7 @@ input:
 }
 
 func init() {
-	err := service.RegisterBatchInput(
+	service.MustRegisterBatchInput(
 		"http_server", hsiSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 			hsiConf, err := hsiConfigFromParsed(conf)
@@ -342,9 +345,6 @@ func init() {
 
 			return interop.NewUnwrapInternalInput(i), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------
@@ -360,7 +360,8 @@ type httpServerInput struct {
 	handlerWG    sync.WaitGroup
 	transactions chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 
 	mPostRcvd metrics.StatCounter
 	mWSRcvd   metrics.StatCounter
@@ -423,7 +424,6 @@ func newHTTPServerInput(conf hsiConfig, mgr bundle.NewManagement) (input.Streame
 		}
 	}
 
-	go h.loop()
 	return &h, nil
 }
 
@@ -907,10 +907,20 @@ func (h *httpServerInput) TransactionChan() <-chan message.Transaction {
 	return h.transactions
 }
 
-// Connected returns a boolean indicating whether this input is currently
-// connected to its target.
-func (h *httpServerInput) Connected() bool {
-	return true
+func (h *httpServerInput) ConnectionTest(context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestSucceeded(h.mgr).AsList()
+}
+
+func (h *httpServerInput) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		component.ConnectionActive(h.mgr),
+	}
+}
+
+func (h *httpServerInput) TriggerStartConsuming() {
+	h.startOnce.Do(func() {
+		go h.loop()
+	})
 }
 
 func (h *httpServerInput) TriggerStopConsuming() {

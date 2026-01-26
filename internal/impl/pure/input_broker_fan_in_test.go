@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -12,15 +14,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var _ input.Streamed = &fanInInputBroker{}
 
 func TestBasicFanIn(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	nInputs, nMsgs := 10, 1000
@@ -42,6 +44,8 @@ func TestBasicFanIn(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	fanIn.TriggerStartConsuming()
 
 	for i := 0; i < nMsgs; i++ {
 		for j := 0; j < nInputs; j++ {
@@ -90,15 +94,15 @@ func TestFanInConnected(t *testing.T) {
 	fanIn, err := newFanInInputBroker(Inputs)
 	require.NoError(t, err)
 
-	assert.True(t, fanIn.Connected())
+	assert.True(t, fanIn.ConnectionStatus().AllActive())
 
 	close(tInOne)
 	time.Sleep(time.Millisecond * 100)
-	assert.True(t, fanIn.Connected())
+	assert.True(t, fanIn.ConnectionStatus().AllActive())
 
 	close(tInTwo)
 	assert.Eventually(t, func() bool {
-		return !fanIn.Connected()
+		return !fanIn.ConnectionStatus().AllActive()
 	}, time.Second, time.Millisecond*10)
 }
 
@@ -121,6 +125,8 @@ func TestFanInShutdown(t *testing.T) {
 		return
 	}
 
+	fanIn.TriggerStartConsuming()
+
 	for _, mockIn := range mockInputs {
 		select {
 		case _, open := <-mockIn.TransactionChan():
@@ -142,7 +148,7 @@ func TestFanInShutdown(t *testing.T) {
 }
 
 func TestFanInAsync(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	nInputs, nMsgs := 10, 1000
@@ -162,6 +168,8 @@ func TestFanInAsync(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	fanIn.TriggerStartConsuming()
 
 	wg := sync.WaitGroup{}
 	wg.Add(nInputs)
@@ -206,7 +214,7 @@ func TestFanInAsync(t *testing.T) {
 }
 
 func BenchmarkBasicFanIn(b *testing.B) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, done := context.WithTimeout(b.Context(), time.Second*5)
 	defer done()
 
 	nInputs := 10
@@ -227,6 +235,8 @@ func BenchmarkBasicFanIn(b *testing.B) {
 		b.Error(err)
 		return
 	}
+
+	fanIn.TriggerStartConsuming()
 
 	defer func() {
 		fanIn.TriggerStopConsuming()

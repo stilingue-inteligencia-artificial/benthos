@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package config_test
 
 import (
@@ -9,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/config"
-	"github.com/benthosdev/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
 func TestStreamsLints(t *testing.T) {
@@ -50,7 +52,7 @@ cache_resources:
 
 	rdr := config.NewReader(generalConfPath, nil, config.OptSetStreamPaths(streamOnePath, streamTwoPath))
 
-	_, lints, err := rdr.Read()
+	_, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Empty(t, lints)
 
@@ -98,7 +100,7 @@ pipeline:
 
 	rdr := config.NewReader("", nil, config.OptSetStreamPaths(streamOnePath, filepath.Join(dir, "nested")))
 
-	_, lints, err := rdr.Read()
+	_, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Empty(t, lints)
 

@@ -1,16 +1,19 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type fanOutSequentialOutputBroker struct {
@@ -19,7 +22,8 @@ type fanOutSequentialOutputBroker struct {
 	outputTSChans []chan message.Transaction
 	outputs       []output.Streamed
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newFanOutSequentialOutputBroker(outputs []output.Streamed) (*fanOutSequentialOutputBroker, error) {
@@ -44,18 +48,21 @@ func (o *fanOutSequentialOutputBroker) Consume(transactions <-chan message.Trans
 		return component.ErrAlreadyStarted
 	}
 	o.transactions = transactions
-
-	go o.loop()
 	return nil
 }
 
-func (o *fanOutSequentialOutputBroker) Connected() bool {
+func (o *fanOutSequentialOutputBroker) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
 	for _, out := range o.outputs {
-		if !out.Connected() {
-			return false
-		}
+		s = append(s, out.ConnectionTest(ctx)...)
 	}
-	return true
+	return
+}
+
+func (o *fanOutSequentialOutputBroker) ConnectionStatus() (s component.ConnectionStatuses) {
+	for _, out := range o.outputs {
+		s = append(s, out.ConnectionStatus()...)
+	}
+	return
 }
 
 func (o *fanOutSequentialOutputBroker) loop() {
@@ -122,6 +129,15 @@ func (o *fanOutSequentialOutputBroker) loop() {
 			return
 		}
 	}
+}
+
+func (o *fanOutSequentialOutputBroker) TriggerStartConsuming() {
+	o.startOnce.Do(func() {
+		for _, to := range o.outputs {
+			to.TriggerStartConsuming()
+		}
+		go o.loop()
+	})
 }
 
 func (o *fanOutSequentialOutputBroker) TriggerCloseNow() {

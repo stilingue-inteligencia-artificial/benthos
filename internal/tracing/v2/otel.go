@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracing
 
 import (
@@ -8,11 +10,11 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
-	name = "benthos"
+	name = "redpanda-connect"
 )
 
 // GetSpan returns a span attached to a message part. Returns nil if the part
@@ -21,8 +23,8 @@ func GetSpan(p *service.Message) *Span {
 	return GetSpanFromContext(p.Context())
 }
 
-// GetSpan returns a span within a context. Returns nil if the context doesn't
-// have a span attached.
+// GetSpanFromContext returns a span within a context. Returns nil if the
+// context doesn't have a span attached.
 func GetSpanFromContext(ctx context.Context) *Span {
 	t := trace.SpanFromContext(ctx)
 	return OtelSpan(ctx, t)

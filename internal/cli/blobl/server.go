@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package blobl
 
 import (
@@ -20,9 +22,9 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/parser"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/parser"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
 
 	_ "embed"
 )
@@ -220,6 +222,7 @@ func runServer(c *cli.Context) error {
 	}
 
 	log.Printf("Serving at: http://%v\n", bindAddress)
+	log.Printf("WARNING: This server is intended for local debugging and experimentation purposes, bloblang has the ability to expose environment variables and file contents, do not expose this server to the internet")
 
 	server := http.Server{
 		Addr:    bindAddress,

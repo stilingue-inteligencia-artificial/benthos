@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -7,8 +9,8 @@ import (
 	"os/exec"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -25,9 +27,9 @@ func subprocOutputSpec() *service.ConfigSpec {
 		Description(`
 Messages are written according to a specified codec. The process is expected to terminate gracefully when stdin is closed.
 
-If the subprocess exits unexpectedly then Benthos will log anything printed to stderr and will log the exit code, and will attempt to execute the command again until success.
+If the subprocess exits unexpectedly then Redpanda Connect will log anything printed to stderr and will log the exit code, and will attempt to execute the command again until success.
 
-The execution environment of the subprocess is the same as the Benthos instance, including environment variables and the current working directory.`).
+The execution environment of the subprocess is the same as the Redpanda Connect instance, including environment variables and the current working directory.`).
 		Fields(
 			service.NewStringField(soFieldName).
 				Description("The command to execute as a subprocess."),
@@ -41,16 +43,13 @@ The execution environment of the subprocess is the same as the Benthos instance,
 }
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"subprocess", subprocOutputSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			maxInFlight = 1
 			out, err = newSubprocessWriterFromParsed(conf, mgr.Logger())
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 //------------------------------------------------------------------------------

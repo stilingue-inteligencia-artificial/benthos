@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -7,8 +9,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	btls "github.com/benthosdev/benthos/v4/internal/tls"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	btls "github.com/redpanda-data/benthos/v4/internal/tls"
 )
 
 // NewTLSField defines a new object type config field that describes TLS

@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package studio
 
 import (
 	"sync/atomic"
 
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 )
 
 var _ log.Modular = &hotSwapLogger{}

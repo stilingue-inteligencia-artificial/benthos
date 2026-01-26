@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -7,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/field"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -21,10 +23,10 @@ const (
 )
 
 func init() {
-	err := service.RegisterBatchProcessor("sleep", service.NewConfigSpec().
+	service.MustRegisterBatchProcessor("sleep", service.NewConfigSpec().
 		Categories("Utility").
 		Stable().
-		Summary(`Sleep for a period of time specified as a duration string for each message. This processor will interpolate functions within the `+"`duration`"+` field, you can find a list of functions [here](/docs/configuration/interpolation#bloblang-queries).`).
+		Summary(`Sleep for a period of time specified as a duration string for each message. This processor will interpolate functions within the `+"`duration`"+` field, you can find a list of functions xref:configuration:interpolation.adoc#bloblang-queries[here].`).
 		Field(service.NewInterpolatedStringField(spFieldDuration).
 			Description("The duration of time to sleep for each execution.")),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
@@ -40,9 +42,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedBatchedProcessor("sleep", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type sleepProc struct {

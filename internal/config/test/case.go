@@ -1,7 +1,9 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package test
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 const (
@@ -15,6 +17,7 @@ const (
 	fieldCaseOutputBatches    = "output_batches"
 )
 
+// Case contains a definition of a single Benthos config test case.
 type Case struct {
 	Name             string
 	Environment      map[string]string
@@ -27,13 +30,14 @@ type Case struct {
 	line int
 }
 
+// Line returns the case line.
 func (c *Case) Line() int {
 	return c.line
 }
 
 func caseFields() docs.FieldSpecs {
 	return docs.FieldSpecs{
-		docs.FieldString(fieldCaseName, "The name of the test, this should be unique and give a rough indication of what behaviour is being tested."),
+		docs.FieldString(fieldCaseName, "The name of the test, this should be unique and give a rough indication of what behavior is being tested."),
 		docs.FieldString(fieldCaseEnvironment, "An optional map of environment variables to set for the duration of the test.").Map().Optional(),
 		docs.FieldString(fieldCaseTargetProcessors, `
 A [JSON Pointer][json-pointer] that identifies the specific processors which should be executed by the test. The target can either be a single processor or an array of processors. Alternatively a resource label can be used to identify a processor.
@@ -70,6 +74,7 @@ It is also possible to target processors in a separate file by prefixing the tar
 	}
 }
 
+// CaseFromAny attempts to return a Case from the untyped input parameter.
 func CaseFromAny(v any) (Case, error) {
 	pConf, err := caseFields().ParsedConfigFromAny(v)
 	if err != nil {
@@ -78,6 +83,7 @@ func CaseFromAny(v any) (Case, error) {
 	return CaseFromParsed(pConf)
 }
 
+// CaseFromParsed extracts a Case from a parsed config.
 func CaseFromParsed(pConf *docs.ParsedConfig) (c Case, err error) {
 	c.line, _ = pConf.Line()
 	if c.Name, err = pConf.FieldString(fieldCaseName); err != nil {

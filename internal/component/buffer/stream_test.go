@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package buffer
 
 import (
@@ -9,12 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestStreamMemoryBuffer(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	var incr, total uint8 = 100, 50
@@ -147,7 +149,7 @@ func TestStreamMemoryBuffer(t *testing.T) {
 }
 
 func TestStreamBufferClosing(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	var incr, total uint8 = 100, 5
@@ -234,7 +236,7 @@ func (r *readErrorBuffer) Close(ctx context.Context) error {
 }
 
 func TestStreamReadErrors(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	tChan := make(chan message.Transaction)

@@ -1,7 +1,8 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -21,7 +22,7 @@ a:
 	proc, err := parsedConfig.FieldProcessor("a")
 	require.NoError(t, err)
 
-	res, err := proc.Process(context.Background(), NewMessage([]byte("hello world")))
+	res, err := proc.Process(t.Context(), NewMessage([]byte("hello world")))
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 
@@ -30,7 +31,7 @@ a:
 	assert.Equal(t, "HELLO WORLD", string(resBytes))
 
 	// Batch processing should work the same
-	resBatches, err := proc.ProcessBatch(context.Background(), MessageBatch{
+	resBatches, err := proc.ProcessBatch(t.Context(), MessageBatch{
 		NewMessage([]byte("hello world")),
 		NewMessage([]byte("hello world two")),
 	})
@@ -46,7 +47,7 @@ a:
 	require.NoError(t, err)
 	assert.Equal(t, "HELLO WORLD TWO", string(resBytes))
 
-	require.NoError(t, proc.Close(context.Background()))
+	require.NoError(t, proc.Close(t.Context()))
 }
 
 func TestConfigProcessorList(t *testing.T) {
@@ -64,7 +65,7 @@ a:
 	require.NoError(t, err)
 	require.Len(t, procs, 2)
 
-	res, err := procs[0].Process(context.Background(), NewMessage([]byte("hello world")))
+	res, err := procs[0].Process(t.Context(), NewMessage([]byte("hello world")))
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 
@@ -72,7 +73,7 @@ a:
 	require.NoError(t, err)
 	assert.Equal(t, "HELLO WORLD", string(resBytes))
 
-	res, err = procs[1].Process(context.Background(), NewMessage([]byte("hello world")))
+	res, err = procs[1].Process(t.Context(), NewMessage([]byte("hello world")))
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 
@@ -80,6 +81,6 @@ a:
 	require.NoError(t, err)
 	assert.Equal(t, "foo: hello world", string(resBytes))
 
-	require.NoError(t, procs[0].Close(context.Background()))
-	require.NoError(t, procs[1].Close(context.Background()))
+	require.NoError(t, procs[0].Close(t.Context()))
+	require.NoError(t, procs[1].Close(t.Context()))
 }

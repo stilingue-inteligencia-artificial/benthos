@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package test_test
 
 import (
@@ -6,8 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/benthosdev/benthos/v4/internal/cli/test"
-	"github.com/benthosdev/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/cli/common"
+	"github.com/redpanda-data/benthos/v4/internal/cli/test"
+	"github.com/redpanda-data/benthos/v4/internal/log"
 )
 
 func TestGetBothPaths(t *testing.T) {
@@ -244,15 +247,15 @@ tests:
 	}
 	defer os.RemoveAll(testDir)
 
-	if !test.RunAll([]string{filepath.Join(testDir, "foo.yaml")}, "_benthos_test", false, log.Noop(), nil) {
+	if !test.RunAll(common.NewCLIOpts("", ""), []string{filepath.Join(testDir, "foo.yaml")}, "_benthos_test", false, log.Noop(), nil) {
 		t.Error("Unexpected result")
 	}
 
-	if test.RunAll([]string{filepath.Join(testDir, "foo.yaml")}, "_benthos_test", true, log.Noop(), nil) {
+	if test.RunAll(common.NewCLIOpts("", ""), []string{filepath.Join(testDir, "foo.yaml")}, "_benthos_test", true, log.Noop(), nil) {
 		t.Error("Unexpected result")
 	}
 
-	if test.RunAll([]string{testDir}, "_benthos_test", true, log.Noop(), nil) {
+	if test.RunAll(common.NewCLIOpts("", ""), []string{testDir}, "_benthos_test", true, log.Noop(), nil) {
 		t.Error("Unexpected result")
 	}
 }

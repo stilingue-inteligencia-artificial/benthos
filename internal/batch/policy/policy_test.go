@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package policy_test
 
 import (
@@ -9,14 +11,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/batch/policy/batchconfig"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy/batchconfig"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestPolicyNoop(t *testing.T) {
@@ -48,7 +50,7 @@ func TestPolicyBasic(t *testing.T) {
 	pol, err := policy.New(conf, mock.NewManager())
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	t.Cleanup(func() {
 		require.NoError(t, pol.Close(tCtx))
 		done()
@@ -99,7 +101,7 @@ func TestPolicyPeriod(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	t.Cleanup(func() {
 		require.NoError(t, pol.Close(tCtx))
 		done()
@@ -136,7 +138,7 @@ func TestPolicySize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	t.Cleanup(func() {
 		require.NoError(t, pol.Close(tCtx))
 		done()
@@ -168,7 +170,7 @@ func TestPolicyCheck(t *testing.T) {
 	pol, err := policy.New(conf, mock.NewManager())
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	t.Cleanup(func() {
 		require.NoError(t, pol.Close(tCtx))
 		done()
@@ -200,7 +202,7 @@ func TestPolicyCheckAdvanced(t *testing.T) {
 	pol, err := policy.New(conf, mock.NewManager())
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	t.Cleanup(func() {
 		require.NoError(t, pol.Close(tCtx))
 		done()
@@ -244,7 +246,7 @@ archive:
 	pol, err := policy.New(conf, mock.NewManager())
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	t.Cleanup(func() {
 		require.NoError(t, pol.Close(tCtx))
 		done()
@@ -279,7 +281,7 @@ func TestPolicySplit(t *testing.T) {
 	pol, err := policy.New(conf, mock.NewManager())
 	require.NoError(t, err)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	t.Cleanup(func() {
 		require.NoError(t, pol.Close(tCtx))
 		done()

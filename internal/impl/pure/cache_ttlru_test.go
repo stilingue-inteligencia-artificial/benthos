@@ -1,14 +1,15 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestTTLRUCacheDefault(t *testing.T) {
@@ -59,7 +60,7 @@ init_values:
 	c, err := ttlruMemCacheFromConfig(defConf, logger)
 	require.NoError(t, err)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	exp := "bar"
 	if act, err := c.Get(ctx, "foo"); err != nil {
@@ -85,7 +86,7 @@ func BenchmarkTTLRU(b *testing.B) {
 	c, err := ttlruMemCacheFromConfig(defConf, logger)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 
@@ -110,7 +111,7 @@ func BenchmarkTTLRUParallel(b *testing.B) {
 	c, err := ttlruMemCacheFromConfig(defConf, logger)
 	require.NoError(b, err)
 
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ResetTimer()
 

@@ -1,22 +1,23 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchProcessor("for_each", service.NewConfigSpec().
+	service.MustRegisterBatchProcessor("for_each", service.NewConfigSpec().
 		Stable().
 		Categories("Composition").
 		Summary("A processor that applies a list of child processors to messages of a batch as though they were each a batch of one message.").
 		Description(`
-This is useful for forcing batch wide processors such as `+"[`dedupe`](/docs/components/processors/dedupe)"+` or interpolations such as the `+"`value`"+` field of the `+"`metadata`"+` processor to execute on individual message parts of a batch instead.
+This is useful for forcing batch wide processors such as `+"xref:components:processors/dedupe.adoc[`dedupe`]"+` or interpolations such as the `+"`value`"+` field of the `+"`metadata`"+` processor to execute on individual message parts of a batch instead.
 
 Please note that most processors already process per message of a batch, and this processor is not needed in those cases.`).
 		Field(service.NewProcessorListField("").Default([]any{})),
@@ -32,7 +33,7 @@ Please note that most processors already process per message of a batch, and thi
 				childProcs[i] = interop.UnwrapOwnedProcessor(p)
 			}
 
-			tp, err := newForEach(childProcs, mgr)
+			tp, err := newForEach(childProcs)
 			if err != nil {
 				return nil, err
 			}
@@ -40,16 +41,13 @@ Please note that most processors already process per message of a batch, and thi
 			p := processor.NewAutoObservedBatchedProcessor("for_each", tp, mgr)
 			return interop.NewUnwrapInternalBatchProcessor(p), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type forEachProc struct {
 	children []processor.V1
 }
 
-func newForEach(children []processor.V1, mgr bundle.NewManagement) (*forEachProc, error) {
+func newForEach(children []processor.V1) (*forEachProc, error) {
 	return &forEachProc{children: children}, nil
 }
 

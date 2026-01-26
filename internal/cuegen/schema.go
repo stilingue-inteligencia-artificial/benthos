@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package cuegen
 
 import (
@@ -5,7 +7,7 @@ import (
 	"cuelang.org/go/cue/format"
 
 	// Populating default environment in order to walk it and generate Cue types.
-	"github.com/benthosdev/benthos/v4/internal/config/schema"
+	"github.com/redpanda-data/benthos/v4/internal/config/schema"
 )
 
 // GenerateSchema generates a Cue schema which includes definitions for the

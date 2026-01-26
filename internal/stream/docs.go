@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package stream
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/pipeline"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/pipeline"
 )
 
 // Spec returns a docs.FieldSpec for a stream configuration.
@@ -15,7 +17,7 @@ func Spec() docs.FieldSpecs {
 		}
 	}
 
-	defaultOutput := map[string]any{"inproc": ""}
+	defaultOutput := map[string]any{"reject": "message rejected by default because an output is not configured"}
 	if _, exists := bundle.GlobalEnvironment.GetDocs("stdout", docs.TypeOutput); exists {
 		defaultOutput = map[string]any{
 			"stdout": map[string]any{},

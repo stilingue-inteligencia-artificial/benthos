@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -5,9 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/httpclient"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/httpclient"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func httpProcSpec() *service.ConfigSpec {
@@ -16,32 +17,32 @@ func httpProcSpec() *service.ConfigSpec {
 		Categories("Integration").
 		Summary("Performs an HTTP request using a message batch as the request body, and replaces the original message parts with the body of the response.").
 		Description(`
-The `+"`rate_limit`"+` field can be used to specify a rate limit [resource](/docs/components/rate_limits/about) to cap the rate of requests across all parallel components service wide.
+The `+"`rate_limit`"+` field can be used to specify a rate limit xref:components:rate_limits/about.adoc[resource] to cap the rate of requests across all parallel components service wide.
 
-The URL and header values of this type can be dynamically set using function interpolations described [here](/docs/configuration/interpolation#bloblang-queries).
+The URL and header values of this type can be dynamically set using function interpolations described xref:configuration:interpolation.adoc#bloblang-queries[here].
 
-In order to map or encode the payload to a specific request body, and map the response back into the original payload instead of replacing it entirely, you can use the `+"[`branch` processor](/docs/components/processors/branch)"+`.
+In order to map or encode the payload to a specific request body, and map the response back into the original payload instead of replacing it entirely, you can use the `+"xref:components:processors/branch.adoc[`branch` processor]"+`.
 
-## Response Codes
+== Response codes
 
-Benthos considers any response code between 200 and 299 inclusive to indicate a successful response, you can add more success status codes with the field `+"`successful_on`"+`.
+Redpanda Connect considers any response code between 200 and 299 inclusive to indicate a successful response, you can add more success status codes with the field `+"`successful_on`"+`.
 
 When a request returns a response code within the `+"`backoff_on`"+` field it will be retried after increasing intervals.
 
 When a request returns a response code within the `+"`drop_on`"+` field it will not be reattempted and is immediately considered a failed request.
 
-## Adding Metadata
+== Add metadata
 
 If the request returns an error response code this processor sets a metadata field `+"`http_status_code`"+` on the resulting message.
 
 Use the field `+"`extract_headers`"+` to specify rules for which other headers should be copied into the resulting message from the response.
 
-## Error Handling
+== Error handling
 
-When all retry attempts for a message are exhausted the processor cancels the attempt. These failed messages will continue through the pipeline unchanged, but can be dropped or placed in a dead letter queue according to your config, you can read about these patterns [here](/docs/configuration/error_handling).`).
+When all retry attempts for a message are exhausted the processor cancels the attempt. These failed messages will continue through the pipeline unchanged, but can be dropped or placed in a dead letter queue according to your config, you can read about xref:configuration:error_handling.adoc[these patterns].`).
 		Example(
 			"Branched Request",
-			`This example uses a `+"[`branch` processor](/docs/components/processors/branch/)"+` to strip the request message into an empty body, grab an HTTP payload, and place the result back into the original message at the path `+"`repo.status`"+`:`,
+			`This example uses a `+"xref:components:processors/branch.adoc[`branch` processor]"+` to strip the request message into an empty body, grab an HTTP payload, and place the result back into the original message at the path `+"`repo.status`"+`:`,
 			`
 pipeline:
   processors:
@@ -57,20 +58,17 @@ pipeline:
 `,
 		).
 		Field(httpclient.ConfigField("POST", false,
-			service.NewBoolField("batch_as_multipart").Description("Send message batches as a single request using [RFC1341](https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html).").Advanced().Default(false),
+			service.NewBoolField("batch_as_multipart").Description("Send message batches as a single request using https://www.w3.org/Protocols/rfc1341/7_2_Multipart.html[RFC1341^].").Advanced().Default(false),
 			service.NewBoolField("parallel").Description("When processing batched messages, whether to send messages of the batch in parallel, otherwise they are sent serially.").Default(false)),
 		)
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"http", httpProcSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchProcessor, error) {
 			return newHTTPProcFromParsed(conf, mgr)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type httpProc struct {
@@ -119,7 +117,7 @@ func (h *httpProc) ProcessBatch(ctx context.Context, msg service.MessageBatch) (
 		resultMsg, err := h.client.Send(context.Background(), msg)
 		if err != nil {
 			var code int
-			var hErr component.ErrUnexpectedHTTPRes
+			var hErr httpclient.ErrUnexpectedHTTPRes
 			if ok := errors.As(err, &hErr); ok {
 				code = hErr.Code
 			}
@@ -159,7 +157,7 @@ func (h *httpProc) ProcessBatch(ctx context.Context, msg service.MessageBatch) (
 				h.log.Errorf("HTTP request to '%v' failed: %v", h.rawURL, err)
 
 				errPart := p.Copy()
-				var hErr component.ErrUnexpectedHTTPRes
+				var hErr httpclient.ErrUnexpectedHTTPRes
 				if ok := errors.As(err, &hErr); ok {
 					errPart.MetaSetMut("http_status_code", hErr.Code)
 				}
@@ -205,7 +203,7 @@ func (h *httpProc) ProcessBatch(ctx context.Context, msg service.MessageBatch) (
 							return nil
 						})
 					} else {
-						var hErr component.ErrUnexpectedHTTPRes
+						var hErr httpclient.ErrUnexpectedHTTPRes
 						if ok := errors.As(err, &hErr); ok {
 							results[index].MetaSetMut("http_status_code", hErr.Code)
 						}

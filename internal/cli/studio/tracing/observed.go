@@ -1,15 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tracing
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/bundle/tracing"
+	"github.com/redpanda-data/benthos/v4/internal/bundle/tracing"
 )
 
-type ObservedSummary struct {
-	Input           int `json:"input"`
-	Output          int `json:"output"`
-	ProcessorErrors int `json:"processor_errors"`
-}
-
+// ObservedEvent observed event container.
 type ObservedEvent struct {
 	Type     string         `json:"type"`
 	Content  string         `json:"content"`

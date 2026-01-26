@@ -1,17 +1,18 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestGroupByValueBasic(t *testing.T) {
@@ -62,7 +63,7 @@ group_by_value:
 		[]byte(`{"foo":0,"bar":7}`),
 		[]byte(`{"foo":1,"bar":8}`),
 	})
-	msgs, res := proc.ProcessBatch(context.Background(), input)
+	msgs, res := proc.ProcessBatch(t.Context(), input)
 	if res != nil {
 		t.Fatal(res)
 	}

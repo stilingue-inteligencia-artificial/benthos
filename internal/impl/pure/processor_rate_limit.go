@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,13 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -23,13 +25,13 @@ func rlimitProcSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Categories("Utility").
 		Stable().
-		Summary(`Throttles the throughput of a pipeline according to a specified ` + "[`rate_limit`](/docs/components/rate_limits/about)" + ` resource. Rate limits are shared across components and therefore apply globally to all processing pipelines.`).
+		Summary(`Throttles the throughput of a pipeline according to a specified ` + "xref:components:rate_limits/about.adoc[`rate_limit`]" + ` resource. Rate limits are shared across components and therefore apply globally to all processing pipelines.`).
 		Field(service.NewStringField(rlimitFieldResource).
-			Description("The target [`rate_limit` resource](/docs/components/rate_limits/about)."))
+			Description("The target xref:components:rate_limits/about.adoc[`rate_limit` resource]."))
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"rate_limit", rlimitProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			resStr, err := conf.FieldString(rlimitFieldResource)
@@ -44,9 +46,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedProcessor("rate_limit", r, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type rateLimitProc struct {

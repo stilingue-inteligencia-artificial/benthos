@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package parser
 
 import (
@@ -5,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
 )
 
 func functionArgsParser(pCtx Context) Func[[]any] {
@@ -257,11 +259,12 @@ func fieldReferenceRootParser(pCtx Context) Func[query.Function] {
 		var fn query.Function
 
 		path := res.Payload
-		if path == "this" {
+		switch path {
+		case "this":
 			fn = query.NewFieldFunction("")
-		} else if path == "root" {
+		case "root":
 			fn = query.NewRootFieldFunction("")
-		} else {
+		default:
 			if pCtx.HasNamedContext(path) {
 				fn = query.NewNamedContextFieldFunction(path, "")
 			} else {

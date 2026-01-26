@@ -1,17 +1,18 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 func TestProcessors(t *testing.T) {
@@ -39,7 +40,7 @@ processors:
 		[]byte(` hello world 1 `),
 		[]byte(` hello bar world 2 `),
 	})
-	msgs, res := proc.ProcessBatch(context.Background(), input)
+	msgs, res := proc.ProcessBatch(t.Context(), input)
 	require.NoError(t, res)
 
 	for _, msg := range msgs {

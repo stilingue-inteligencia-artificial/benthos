@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -5,14 +7,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/field"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -21,12 +24,15 @@ const (
 	coFieldTTL    = "ttl"
 )
 
+// CacheOutputSpec returns the config spec of the cache output plugin.
 func CacheOutputSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Stable().
 		Categories("Services").
-		Summary(`Stores each message in a [cache](/docs/components/caches/about).`).
-		Description(output.Description(true, false, `Caches are configured as [resources](/docs/components/caches/about), where there's a wide variety to choose from.
+		Summary(`Stores each message in a xref:components:caches/about.adoc[cache].`).
+		Description(`Caches are configured as xref:components:caches/about.adoc[resources], where there's a wide variety to choose from.
+
+:cache-support: aws_dynamodb=certified, aws_s3=certified, file=certified, memcached=certified, memory=certified, nats_kv=certified, redis=certified, ristretto=certified, couchbase=community, mongodb=community, sql=community, multilevel=community, ttlru=community, gcp_cloud_storage=community, lru=community, noop=community
 
 The `+"`target`"+` field must reference a configured cache resource label like follows:
 
@@ -44,7 +50,7 @@ cache_resources:
       default_ttl: 60s
 `+"```"+`
 
-In order to create a unique `+"`key`"+` value per item you should use function interpolations described [here](/docs/configuration/interpolation#bloblang-queries).`)).
+In order to create a unique `+"`key`"+` value per item you should use function interpolations described in xref:configuration:interpolation.adoc#bloblang-queries[Bloblang queries].`+service.OutputPerformanceDocs(true, false)).
 		Fields(
 			service.NewStringField(coFieldTarget).
 				Description("The target cache to store messages in."),
@@ -67,7 +73,7 @@ In order to create a unique `+"`key`"+` value per item you should use function i
 }
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"cache", CacheOutputSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (out service.BatchOutput, batchPolicy service.BatchPolicy, maxInFlight int, err error) {
 			if maxInFlight, err = conf.FieldMaxInFlight(); err != nil {
@@ -88,11 +94,9 @@ func init() {
 			out = interop.NewUnwrapInternalOutput(s)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
+// CacheWriter is a writer implementation for the cache output plugin.
 type CacheWriter struct {
 	mgr bundle.NewManagement
 
@@ -103,7 +107,7 @@ type CacheWriter struct {
 	log log.Modular
 }
 
-// NewCacheWriter creates a writer for cache the output plugin.
+// NewCacheWriter creates a writer for the cache output plugin.
 func NewCacheWriter(conf *service.ParsedConfig, mgr bundle.NewManagement) (*CacheWriter, error) {
 	target, err := conf.FieldString(coFieldTarget)
 	if err != nil {
@@ -135,6 +139,11 @@ func NewCacheWriter(conf *service.ParsedConfig, mgr bundle.NewManagement) (*Cach
 		ttl:    ttl,
 		log:    mgr.Logger(),
 	}, nil
+}
+
+// ConnectionTest is currently unsupported.
+func (c *CacheWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestNotSupported(c.mgr).AsList()
 }
 
 // Connect does nothing.

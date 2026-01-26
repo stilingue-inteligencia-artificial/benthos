@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package config
 
 import (
@@ -10,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestReaderResourceFileReading(t *testing.T) {
@@ -48,7 +50,7 @@ processor_resources:
 	rdr.changeDelayPeriod = 1 * time.Millisecond
 	rdr.changeFlushPeriod = 1 * time.Millisecond
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Empty(t, lints)
 
@@ -61,7 +63,7 @@ processor_resources:
 	require.NoError(t, err)
 	require.NoError(t, rdr.BeginFileWatching(testMgr, true))
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	assertProc := func(name, input, output string) {
@@ -164,7 +166,7 @@ processor_resources:
 	rdr.changeDelayPeriod = 1 * time.Millisecond
 	rdr.changeFlushPeriod = 1 * time.Millisecond
 
-	conf, lints, err := rdr.Read()
+	conf, _, lints, err := rdr.Read()
 	require.NoError(t, err)
 	require.Empty(t, lints)
 
@@ -177,7 +179,7 @@ processor_resources:
 	require.NoError(t, err)
 	require.NoError(t, rdr.BeginFileWatching(testMgr, true))
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	assertProc := func(name, input, output string) {

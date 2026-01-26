@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs
 
 import (
 	"fmt"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 // GetInferenceCandidateFromMap checks a map config structure for a component
@@ -122,11 +124,13 @@ func (f FieldSpecs) AnyToMap(v any, conf ToValueConfig) (map[string]any, error) 
 	}
 
 	for k, v := range pendingFieldsMap {
-		defValue, err := getDefault(k, v)
+		defValue, optional, err := getDefault(k, v)
 		if err != nil {
 			if v.needsDefault() && !conf.Passive {
 				return nil, err
 			}
+			continue
+		} else if optional {
 			continue
 		}
 		m[k] = value.IClone(defValue)

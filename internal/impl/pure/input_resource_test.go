@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -8,13 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 func TestResourceInput(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	mgr := mock.NewManager()
@@ -23,6 +25,7 @@ func TestResourceInput(t *testing.T) {
 		{message.NewPart([]byte("hello world 2"))},
 		{message.NewPart([]byte("hello world 3"))},
 	})
+	mgr.Inputs["foo"].TriggerStartConsuming()
 
 	nConf := input.NewConfig()
 	nConf.Type = "resource"
@@ -30,6 +33,8 @@ func TestResourceInput(t *testing.T) {
 
 	p, err := mgr.NewInput(nConf)
 	require.NoError(t, err)
+
+	p.TriggerStartConsuming()
 
 	tChan := p.TransactionChan()
 	readTran := func() message.Transaction {
@@ -68,7 +73,7 @@ func TestResourceInput(t *testing.T) {
 }
 
 func TestResourceInputEarlyTermination(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	mgr := mock.NewManager()
@@ -77,6 +82,7 @@ func TestResourceInputEarlyTermination(t *testing.T) {
 		{message.NewPart([]byte("hello world 2"))},
 		{message.NewPart([]byte("hello world 3"))},
 	})
+	mgr.Inputs["foo"].TriggerStartConsuming()
 
 	nConf := input.NewConfig()
 	nConf.Type = "resource"
@@ -84,6 +90,8 @@ func TestResourceInputEarlyTermination(t *testing.T) {
 
 	p, err := mgr.NewInput(nConf)
 	require.NoError(t, err)
+
+	p.TriggerStartConsuming()
 
 	tChan := p.TransactionChan()
 	readTran := func() message.Transaction {

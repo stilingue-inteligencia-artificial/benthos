@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package tls
 
 import (
@@ -15,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/youmark/pkcs8"
 
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
 )
 
 func createCertificates() (certPem, keyPem []byte) {

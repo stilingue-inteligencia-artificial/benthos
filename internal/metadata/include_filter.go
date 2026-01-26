@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package metadata
 
 import (
@@ -5,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // IncludeFilterDocs returns a docs spec for a metadata filter where keys are

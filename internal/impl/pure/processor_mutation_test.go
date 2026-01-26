@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -9,13 +11,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 func TestMutationCreateCrossfire(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	inMsg := message.NewPart(nil)
 	inMsg.SetStructuredMut(map[string]any{
@@ -88,7 +90,7 @@ meta baz = "new meta"
 }
 
 func TestMutationCreateCustomObject(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	part := message.NewPart(nil)
 
@@ -119,7 +121,7 @@ func TestMutationCreateCustomObject(t *testing.T) {
 }
 
 func TestMutationCreateFiltering(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	inBatch := message.Batch{
 		message.NewPart([]byte(`{"foo":{"delete":true}}`)),
@@ -153,7 +155,7 @@ root = match {
 }
 
 func TestMutationCreateFilterAll(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	inBatch := message.Batch{
 		message.NewPart([]byte(`{"foo":{"delete":true}}`)),
@@ -173,7 +175,7 @@ func TestMutationCreateFilterAll(t *testing.T) {
 }
 
 func TestMutationCreateJSONError(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	msg := message.Batch{
 		message.NewPart([]byte(`this is not valid json`)),
@@ -206,7 +208,7 @@ root.sum = this.a + this.b
 
 	proc := newMutation(blobl, nil)
 
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*30)
+	tCtx, done := context.WithTimeout(b.Context(), time.Second*30)
 	defer done()
 
 	tmpMsg := message.NewPart(nil)

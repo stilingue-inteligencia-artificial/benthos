@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs_test
 
 import (
@@ -6,9 +8,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 func BenchmarkFields(b *testing.B) {
@@ -23,7 +25,7 @@ func BenchmarkFields(b *testing.B) {
 				Type:   docs.TypeMetrics,
 				Status: docs.StatusStable,
 				Summary: `
-Pushes metrics using the [StatsD protocol](https://github.com/statsd/statsd).
+Pushes metrics using the https://github.com/statsd/statsd[StatsD protocol].
 Supported tagging formats are 'none', 'datadog' and 'influxdb'.`,
 				Description: `
 The underlying client library has recently been updated in order to support
@@ -50,7 +52,7 @@ tagging.`,
 				Type:   docs.TypeMetrics,
 				Status: docs.StatusStable,
 				Summary: `
-Pushes metrics using the [StatsD protocol](https://github.com/statsd/statsd).
+Pushes metrics using the https://github.com/statsd/statsd[StatsD protocol].
 Supported tagging formats are 'none', 'datadog' and 'influxdb'.`,
 				Description: `
 The underlying client library has recently been updated in order to support

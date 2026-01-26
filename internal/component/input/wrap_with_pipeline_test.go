@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package input_test
 
 import (
@@ -9,12 +11,14 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	iprocessor "github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/pipeline"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	iprocessor "github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/pipeline"
 
-	_ "github.com/benthosdev/benthos/v4/internal/impl/pure"
+	_ "github.com/redpanda-data/benthos/v4/internal/impl/pure"
 )
 
 type mockInput struct {
@@ -26,8 +30,17 @@ func (m *mockInput) TransactionChan() <-chan message.Transaction {
 	return m.ts
 }
 
-func (m *mockInput) Connected() bool {
-	return true
+func (m *mockInput) ConnectionTest(context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestNotSupported(mock.NewManager()).AsList()
+}
+
+func (m *mockInput) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		component.ConnectionActive(component.NoopObservability()),
+	}
+}
+
+func (m *mockInput) TriggerStartConsuming() {
 }
 
 func (m *mockInput) TriggerStopConsuming() {
@@ -90,6 +103,8 @@ func TestBasicWrapPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	newInput.TriggerStartConsuming()
+
 	if newInput.TransactionChan() != mockPi.ts {
 		t.Error("Wrong transaction chan in new input type")
 	}
@@ -98,7 +113,7 @@ func TestBasicWrapPipeline(t *testing.T) {
 		t.Error("Wrong transactions chan in mock pipe")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	newInput.TriggerStopConsuming()
@@ -155,6 +170,8 @@ func TestBasicWrapMultiPipelines(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	newInput.TriggerStartConsuming()
+
 	if newInput.TransactionChan() != mockPi2.ts {
 		t.Error("Wrong message chan in new input type")
 	}
@@ -169,7 +186,7 @@ func TestBasicWrapMultiPipelines(t *testing.T) {
 		t.Error("Wrong messages chan in mock pipe 2")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	newInput.TriggerStopConsuming()
@@ -210,7 +227,7 @@ func (m mockProc) Close(ctx context.Context) error {
 //------------------------------------------------------------------------------
 
 func TestBasicWrapProcessors(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*20)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	mockIn := &mockInput{ts: make(chan message.Transaction)}
@@ -281,7 +298,7 @@ func TestBasicWrapProcessors(t *testing.T) {
 }
 
 func TestBasicWrapDoubleProcessors(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*20)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*20)
 	defer done()
 
 	mockIn := &mockInput{ts: make(chan message.Transaction)}

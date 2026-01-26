@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package cuegen
 
 import (
 	"cuelang.org/go/cue/ast"
 
-	"github.com/benthosdev/benthos/v4/internal/config/schema"
+	"github.com/redpanda-data/benthos/v4/internal/config/schema"
 )
 
 func doConfig(sch schema.Full) ([]ast.Decl, error) {

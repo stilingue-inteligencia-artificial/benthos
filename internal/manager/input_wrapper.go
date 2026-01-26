@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package manager
 
 import (
@@ -8,40 +10,53 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var _ input.Streamed = &InputWrapper{}
 
 type inputCtrl struct {
 	input         input.Streamed
+	startOnce     sync.Once
 	closedForSwap *int32
 }
 
+func (i *inputCtrl) ensureInit() {
+	i.input.TriggerStartConsuming()
+}
+
+// InputWrapper is a wrapper for a streamed input.
 type InputWrapper struct {
 	ctrl      *inputCtrl
 	inputLock sync.Mutex
 
-	tranChan chan message.Transaction
-	shutSig  *shutdown.Signaller
+	o component.Observability
+
+	startOnce sync.Once
+	tranChan  chan message.Transaction
+	shutSig   *shutdown.Signaller
 }
 
-func WrapInput(i input.Streamed) *InputWrapper {
+// WrapInput wraps a streamed input and starts the transaction processing loop.
+func WrapInput(i input.Streamed, o component.Observability) *InputWrapper {
 	var s int32
 	w := &InputWrapper{
 		ctrl: &inputCtrl{
 			input:         i,
+			startOnce:     sync.Once{},
 			closedForSwap: &s,
 		},
+		o:        o,
 		tranChan: make(chan message.Transaction),
 		shutSig:  shutdown.NewSignaller(),
 	}
-	go w.loop()
 	return w
 }
 
+// CloseExistingInput instructs the wrapped input to stop consuming messages and
+// waits for it to shut down.
 func (w *InputWrapper) CloseExistingInput(ctx context.Context, forSwap bool) error {
 	w.inputLock.Lock()
 	tmpInput := w.ctrl.input
@@ -60,25 +75,53 @@ func (w *InputWrapper) CloseExistingInput(ctx context.Context, forSwap bool) err
 	return tmpInput.WaitForClose(ctx)
 }
 
+// SwapInput swaps the wrapped input with another one.
 func (w *InputWrapper) SwapInput(i input.Streamed) {
 	var s int32
 	w.inputLock.Lock()
 	w.ctrl = &inputCtrl{
 		input:         i,
+		startOnce:     sync.Once{},
 		closedForSwap: &s,
 	}
 	w.inputLock.Unlock()
 }
 
+// TriggerStartConsuming signals that data should be consumed.
+func (w *InputWrapper) TriggerStartConsuming() {
+	w.startOnce.Do(func() {
+		go w.loop()
+	})
+}
+
+// TransactionChan returns a transactions channel for consuming messages from
+// the wrapped input.
 func (w *InputWrapper) TransactionChan() <-chan message.Transaction {
 	return w.tranChan
 }
 
-func (w *InputWrapper) Connected() bool {
+// ConnectionTest returns a status after testing the underlying connection.
+func (w *InputWrapper) ConnectionTest(ctx context.Context) (s component.ConnectionTestResults) {
 	w.inputLock.Lock()
-	con := w.ctrl.input != nil && w.ctrl.input.Connected()
+	if w.ctrl.input != nil {
+		s = w.ctrl.input.ConnectionTest(ctx)
+	} else {
+		s = component.ConnectionTestNotSupported(w.o).AsList()
+	}
 	w.inputLock.Unlock()
-	return con
+	return
+}
+
+// ConnectionStatus returns the current status of the given component
+// connection. The result is a slice in order to accommodate higher order
+// components that wrap several others.
+func (w *InputWrapper) ConnectionStatus() (s component.ConnectionStatuses) {
+	w.inputLock.Lock()
+	if w.ctrl.input != nil {
+		s = w.ctrl.input.ConnectionStatus()
+	}
+	w.inputLock.Unlock()
+	return
 }
 
 func (w *InputWrapper) loop() {
@@ -104,6 +147,7 @@ func (w *InputWrapper) loop() {
 		if w.ctrl.input != nil {
 			tChan = w.ctrl.input.TransactionChan()
 			closedForSwap = w.ctrl.closedForSwap
+			w.ctrl.ensureInit()
 		}
 		w.inputLock.Unlock()
 
@@ -143,15 +187,26 @@ func (w *InputWrapper) loop() {
 	}
 }
 
+// TriggerStopConsuming instructs the wrapped input to start shutting down
+// resources once all pending messages are delivered and acknowledged. This call
+// does not block.
 func (w *InputWrapper) TriggerStopConsuming() {
 	w.shutSig.TriggerSoftStop()
 }
 
+// TriggerCloseNow triggers the shut down of the wrapped input but should not
+// block the calling goroutine.
 func (w *InputWrapper) TriggerCloseNow() {
 	w.shutSig.TriggerHardStop()
 }
 
+// WaitForClose is a blocking call to wait until the wrapped input has finished
+// shutting down and cleaning up resources.
 func (w *InputWrapper) WaitForClose(ctx context.Context) error {
+	w.startOnce.Do(func() {
+		// If we hit here then we haven't been restarted
+		w.shutSig.TriggerHasStopped()
+	})
 	select {
 	case <-w.shutSig.HasStoppedChan():
 	case <-ctx.Done():

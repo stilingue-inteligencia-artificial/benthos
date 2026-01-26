@@ -1,9 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package output
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // Sync is a common interface implemented by outputs and provides synchronous
@@ -12,9 +15,19 @@ type Sync interface {
 	// WriteTransaction attempts to write a transaction to an output.
 	WriteTransaction(context.Context, message.Transaction) error
 
-	// Connected returns a boolean indicating whether this output is currently
-	// connected to its target.
-	Connected() bool
+	// ConnectionTest attempts to establish whether the component is capable of
+	// creating a connection. This will potentially require and test network
+	// connectivity, but does not require the component to be initialized.
+	ConnectionTest(ctx context.Context) component.ConnectionTestResults
+
+	// ConnectionStatus returns the current status of the given component
+	// connection. The result is a slice in order to accommodate higher order
+	// components that wrap several others.
+	ConnectionStatus() component.ConnectionStatuses
+
+	// TriggerStartConsuming instructs the output to establish connections and
+	// begin consuming data.
+	TriggerStartConsuming()
 
 	// TriggerStopConsuming instructs the output to start shutting down
 	// resources once all pending messages are delivered and acknowledged.
@@ -35,9 +48,19 @@ type Streamed interface {
 	// Consume starts the type receiving transactions from a Transactor.
 	Consume(<-chan message.Transaction) error
 
-	// Connected returns a boolean indicating whether this output is currently
-	// connected to its target.
-	Connected() bool
+	// ConnectionTest attempts to establish whether the component is capable of
+	// creating a connection. This will potentially require and test network
+	// connectivity, but does not require the component to be initialized.
+	ConnectionTest(ctx context.Context) component.ConnectionTestResults
+
+	// ConnectionStatus returns the current status of the given component
+	// connection. The result is a slice in order to accommodate higher order
+	// components that wrap several others.
+	ConnectionStatus() component.ConnectionStatuses
+
+	// TriggerStartConsuming instructs the output to establish connections and
+	// begin consuming data.
+	TriggerStartConsuming()
 
 	// TriggerCloseNow triggers the shut down of this component but should not
 	// block the calling goroutine.

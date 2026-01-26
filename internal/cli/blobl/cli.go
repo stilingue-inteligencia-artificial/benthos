@@ -1,40 +1,49 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package blobl
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 
 	"github.com/Jeffail/gabs/v2"
 	"github.com/fatih/color"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/mapping"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/parser"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/mapping"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/parser"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/cli/common"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/value"
 )
 
 var red = color.New(color.FgRed).SprintFunc()
 
 // CliCommand is a cli.Command definition for running a blobl mapping.
-func CliCommand() *cli.Command {
+func CliCommand(opts *common.CLIOpts) *cli.Command {
 	return &cli.Command{
 		Name:  "blobl",
-		Usage: "Execute a Bloblang mapping on documents consumed via stdin",
-		Description: `
+		Usage: opts.ExecTemplate("Execute a {{.ProductName}} mapping on documents consumed via stdin or file"),
+		Description: opts.ExecTemplate(`
 Provides a convenient tool for mapping JSON documents over the command line:
 
-  cat documents.jsonl | benthos blobl 'foo.bar.map_each(this.uppercase())'
+  cat documents.jsonl | {{.BinaryName}} blobl 'foo.bar.map_each(this.uppercase())'
 
-  echo '{"foo":"bar"}' | benthos blobl -f ./mapping.blobl
+  echo '{"foo":"bar"}' | {{.BinaryName}} blobl -f ./mapping.blobl
 
-Find out more about Bloblang at: https://benthos.dev/docs/guides/bloblang/about`[1:],
+  {{.BinaryName}} blobl -i input.jsonl -f ./mapping.blobl
+
+Find out more about Bloblang at: {{.DocumentationURL}}/guides/bloblang/about`)[1:],
 		Flags: []cli.Flag{
 			&cli.IntFlag{
 				Name:    "threads",
@@ -57,19 +66,40 @@ Find out more about Bloblang at: https://benthos.dev/docs/guides/bloblang/about`
 				Aliases: []string{"f"},
 				Usage:   "execute a mapping from a file.",
 			},
+			&cli.StringFlag{
+				Name:    "input",
+				Aliases: []string{"i"},
+				Usage:   "read input from a file instead of stdin.",
+			},
 			&cli.IntFlag{
 				Name:  "max-token-length",
 				Usage: "Set the buffer size for document lines.",
 				Value: bufio.MaxScanTokenSize,
 			},
+			&cli.StringSliceFlag{
+				Name:    common.RootFlagEnvFile,
+				Aliases: []string{"e"},
+				Value:   cli.NewStringSlice(),
+				Usage:   "import environment variables from a dotenv file",
+			},
 		},
-		Action: run,
+		Before: func(c *cli.Context) error {
+			return common.PreApplyEnvFilesAndTemplates(c, opts)
+		},
+		Action: func(ctx *cli.Context) error {
+			return run(ctx, opts)
+		},
 		Subcommands: []*cli.Command{
 			{
-				Name:        "server",
-				Usage:       "EXPERIMENTAL: Run a web server that hosts a Bloblang app",
-				Description: "Run a web server that provides an interactive application for writing and testing Bloblang mappings.",
-				Action:      runServer,
+				Name:  "server",
+				Usage: "EXPERIMENTAL: Run a web server that hosts a Bloblang app",
+				Description: `
+Run a web server that provides an interactive application for writing and
+testing Bloblang mappings.
+
+**WARNING** This server is intended for local debugging and experimentation
+purposes only. Do NOT expose it to the internet.`[1:],
+				Action: runServer,
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:  "host",
@@ -211,7 +241,11 @@ func (e *execCache) executeMapping(exec *mapping.Executor, rawInput, prettyOutpu
 	return resultStr, nil
 }
 
-func run(c *cli.Context) error {
+func run(c *cli.Context, opts *common.CLIOpts) error {
+	if err := opts.CustomRunExtractFn(c); err != nil {
+		return err
+	}
+
 	t := c.Int("threads")
 	if t < 1 {
 		t = 1
@@ -219,81 +253,82 @@ func run(c *cli.Context) error {
 	raw := c.Bool("raw")
 	pretty := c.Bool("pretty")
 	file := c.String("file")
-	m := c.Args().First()
+	mb := []byte(c.Args().First())
 
 	if file != "" {
-		if m != "" {
-			fmt.Fprintln(os.Stderr, red("invalid flags, unable to execute both a file mapping and an inline mapping"))
-			os.Exit(1)
+		if len(mb) > 0 {
+			return errors.New("invalid flags, unable to execute both a file mapping and an inline mapping")
 		}
 		mappingBytes, err := ifs.ReadFile(ifs.OS(), file)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, red("failed to read mapping file: %v\n"), err)
-			os.Exit(1)
+			return fmt.Errorf("failed to read mapping file: %w", err)
 		}
-		m = string(mappingBytes)
+		mb = mappingBytes
 	}
 
+	mb, err := config.NewReader("", nil, config.OptUseEnvLookupFunc(opts.SecretAccessFn)).
+		ReplaceEnvVariables(context.TODO(), mb)
+	if err != nil {
+		return fmt.Errorf("failed to replace env vars: %s", err)
+	}
+
+	mapping := string(mb)
+
 	bEnv := bloblang.NewEnvironment().WithImporterRelativeToFile(file)
-	exec, err := bEnv.NewMapping(m)
+	exec, err := bEnv.NewMapping(mapping)
 	if err != nil {
 		if perr, ok := err.(*parser.Error); ok {
-			fmt.Fprintf(os.Stderr, "%v %v\n", red("failed to parse mapping:"), perr.ErrorAtPositionStructured("", []rune(m)))
-		} else {
-			fmt.Fprintln(os.Stderr, red(err.Error()))
+			return fmt.Errorf("failed to parse mapping: %v", perr.ErrorAtPositionStructured("", []rune(mapping)))
 		}
-		os.Exit(1)
+		return errors.New(err.Error())
 	}
 
 	inputsChan := make(chan []byte)
-	go func() {
+	eg, _ := errgroup.WithContext(c.Context)
+	eg.Go(func() error {
 		defer close(inputsChan)
 
-		scanner := bufio.NewScanner(os.Stdin)
+		var r io.Reader = os.Stdin
+		if filePath := c.String("input"); filePath != "" {
+			f, err := os.Open(filePath)
+			if err != nil {
+				return fmt.Errorf("failed to open input file: %w", err)
+			}
+			defer f.Close()
+			r = f
+		}
+		scanner := bufio.NewScanner(r)
 		scanner.Buffer(nil, c.Int("max-token-length"))
 		for scanner.Scan() {
 			input := make([]byte, len(scanner.Bytes()))
 			copy(input, scanner.Bytes())
 			inputsChan <- input
 		}
-		if scanner.Err() != nil {
-			fmt.Fprintln(os.Stderr, red(scanner.Err()))
-			os.Exit(1)
-		}
-	}()
+		return scanner.Err()
+	})
 
-	wg := sync.WaitGroup{}
-	wg.Add(t)
-	resultsChan := make(chan string)
-	go func() {
-		wg.Wait()
-		close(resultsChan)
-	}()
+	var mu sync.Mutex
 
 	for i := 0; i < t; i++ {
-		go func() {
-			defer wg.Done()
-
+		eg.Go(func() error {
 			execCache := newExecCache()
 			for {
 				input, open := <-inputsChan
 				if !open {
-					return
+					return nil
 				}
+				res, err := execCache.executeMapping(exec, raw, pretty, input)
 
-				resultStr, err := execCache.executeMapping(exec, raw, pretty, input)
+				mu.Lock()
 				if err != nil {
-					fmt.Fprintln(os.Stderr, red(fmt.Sprintf("failed to execute map: %v", err)))
-					continue
+					fmt.Fprintln(opts.Stderr, red(fmt.Sprintf("failed to execute map: %v", err)))
+				} else {
+					fmt.Fprintln(opts.Stdout, res)
 				}
-				resultsChan <- resultStr
+				mu.Unlock()
 			}
-		}()
+		})
 	}
 
-	for res := range resultsChan {
-		fmt.Println(res)
-	}
-	os.Exit(0)
-	return nil
+	return eg.Wait()
 }

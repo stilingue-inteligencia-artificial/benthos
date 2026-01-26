@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package transaction
 
 import (
@@ -5,7 +7,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // ErrNoStore is an error returned by components attempting to write a message
@@ -77,6 +79,14 @@ func NewResultStore() ResultStore {
 }
 
 //------------------------------------------------------------------------------
+
+// AddResultStoreMsg sets a result store within the context of the provided
+// message that allows a roundtrip.Writer or any other component to propagate a
+// resulting message back to the origin.
+func AddResultStoreMsg(p *message.Part, store ResultStore) *message.Part {
+	ctx := message.GetContext(p)
+	return message.WithContext(context.WithValue(ctx, ResultStoreKey, store), p)
+}
 
 // AddResultStore sets a result store within the context of the provided message
 // that allows a roundtrip.Writer or any other component to propagate a

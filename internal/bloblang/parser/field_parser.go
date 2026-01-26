@@ -1,7 +1,9 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package parser
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/bloblang/field"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/field"
 )
 
 func intoStaticResolver(p Func[string]) Func[field.Resolver] {

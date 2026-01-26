@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package studio
 
 import (
@@ -5,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"path"
 	"runtime/pprof"
 	"time"
@@ -13,21 +14,26 @@ import (
 	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/urfave/cli/v2"
 
-	ibloblang "github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/bundle/tracing"
-	"github.com/benthosdev/benthos/v4/internal/cli/common"
-	"github.com/benthosdev/benthos/v4/internal/cli/studio/metrics"
-	stracing "github.com/benthosdev/benthos/v4/internal/cli/studio/tracing"
-	"github.com/benthosdev/benthos/v4/internal/config"
-	"github.com/benthosdev/benthos/v4/internal/docs"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/manager"
-	"github.com/benthosdev/benthos/v4/internal/stream"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	ibloblang "github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/bundle/tracing"
+	"github.com/redpanda-data/benthos/v4/internal/cli/common"
+	"github.com/redpanda-data/benthos/v4/internal/cli/studio/metrics"
+	stracing "github.com/redpanda-data/benthos/v4/internal/cli/studio/tracing"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/config"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/manager"
+	"github.com/redpanda-data/benthos/v4/internal/stream"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 type noopStopper struct{}
+
+func (n noopStopper) ConnectionStatus() component.ConnectionStatuses {
+	return nil
+}
 
 func (n noopStopper) Stop(_ context.Context) error {
 	return nil
@@ -48,9 +54,12 @@ const defaultCloseDeadline = time.Second * 30
 // reallocations, or config changes and attempt to reflect those changes in the
 // running stream.
 type PullRunner struct {
-	confReaderSpec docs.FieldSpecs
-	confReader     *config.Reader
-	sessionTracker *sessionTracker
+	secretLookupFn   func(context.Context, string) (string, bool)
+	bloblEnvironment *ibloblang.Environment
+	environment      *bundle.Environment
+	confReaderSpec   docs.FieldSpecs
+	confReader       *config.Reader
+	sessionTracker   *sessionTracker
 
 	// Controls disabled deployment rotations
 	isDisabled     bool
@@ -68,6 +77,7 @@ type PullRunner struct {
 	exitTimeout time.Duration
 
 	cliContext  *cli.Context
+	cliOpts     *common.CLIOpts
 	strictMode  bool
 	version     string
 	dateBuilt   string
@@ -95,16 +105,20 @@ func OptSetNowFn(fn func() time.Time) func(*PullRunner) {
 // pushed deep into things like the manager constructor, and as cli options are
 // expanded it'd be a drag to have to update every single constructor signature
 // that calls into it.
-func NewPullRunner(c *cli.Context, version, dateBuilt, token, secret string, opts ...func(p *PullRunner)) (*PullRunner, error) {
+func NewPullRunner(c *cli.Context, cliOpts *common.CLIOpts, token, secret string, opts ...func(p *PullRunner)) (*PullRunner, error) {
 	r := &PullRunner{
-		confReaderSpec:     config.Spec(),
+		secretLookupFn:     cliOpts.SecretAccessFn,
+		bloblEnvironment:   cliOpts.BloblEnvironment,
+		environment:        cliOpts.Environment,
+		confReaderSpec:     cliOpts.MainConfigSpecCtor(),
 		metricsFlushPeriod: time.Second * 30,
 		stoppableStream:    common.NewSwappableStopper(&noopStopper{}),
 		logger:             &hotSwapLogger{},
 		cliContext:         c,
-		strictMode:         !c.Bool("chilled"),
-		version:            version,
-		dateBuilt:          dateBuilt,
+		cliOpts:            cliOpts,
+		strictMode:         !cliOpts.RootFlags.GetChilled(c),
+		version:            cliOpts.Version,
+		dateBuilt:          cliOpts.DateBuilt,
 		nowFn:              time.Now,
 		allowTraces:        c.Bool("send-traces"),
 	}
@@ -126,19 +140,26 @@ func NewPullRunner(c *cli.Context, version, dateBuilt, token, secret string, opt
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse endpoint: %w", err)
 	}
-	baseURL.Path = path.Join(baseURL.Path, fmt.Sprintf("/api/v1/node/session/%v", c.String("session")))
-
+	apiPathPrefix := c.String("api-path-prefix")
+	if apiPathPrefix == "" {
+		apiPathPrefix = "api"
+	}
+	baseURL.Path = path.Join(baseURL.Path, "/", apiPathPrefix, fmt.Sprintf("v1/node/session/%v", c.String("session")))
 	// Logger is suuuuper primitive so we need to have one available before we
 	// bootstrap. In order to accommodate this we create a hot swappable logger
 	// that gets replaced each time a new config is loaded.
 	{
-		confPath, confResPaths, setSlice := c.String("config"), c.StringSlice("resources"), c.StringSlice("set")
-		tmpConf, localLints, err := config.NewReader(confPath, confResPaths, config.OptAddOverrides(setSlice...)).Read()
+		confPath, confResPaths, setSlice := cliOpts.RootFlags.GetConfig(c), cliOpts.RootFlags.GetResources(c), cliOpts.RootFlags.GetSet(c)
+		tmpConf, _, localLints, err := config.NewReader(
+			confPath, confResPaths,
+			config.OptAddOverrides(setSlice...),
+			config.OptUseEnvLookupFunc(cliOpts.SecretAccessFn),
+		).Read()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create initial logger: %w", err)
 		}
 
-		logger, err := common.CreateLogger(c, tmpConf, false)
+		logger, err := common.CreateLogger(c, cliOpts, tmpConf, false)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create initial logger: %w", err)
 		}
@@ -150,7 +171,7 @@ func NewPullRunner(c *cli.Context, version, dateBuilt, token, secret string, opt
 				return nil, errors.New("linter errors were found in local configuration files, to ignore these errors run Benthos with --chilled")
 			}
 
-			newSpec := config.Spec()
+			newSpec := cliOpts.MainConfigSpecCtor()
 			sanitObj, _ := tmpConf.GetRawSource().(map[string]any)
 			for _, k := range []string{
 				"http", "input", "buffer", "output", "logger", "metrics", "tracer",
@@ -186,6 +207,15 @@ func (r *PullRunner) logLints(lints []string) {
 	}
 }
 
+func initStream(conf stream.Config, mgr bundle.NewManagement) (*stream.Type, error) {
+	s, err := stream.New(conf, mgr)
+	if err != nil {
+		return nil, err
+	}
+	s.TriggerStartConsuming()
+	return s, nil
+}
+
 func (r *PullRunner) setStreamDisabled(ctx context.Context, toDisabled bool) error {
 	if r.isDisabled == toDisabled {
 		return nil // Already set
@@ -193,14 +223,14 @@ func (r *PullRunner) setStreamDisabled(ctx context.Context, toDisabled bool) err
 
 	return r.withExitContext(ctx, func(ctx context.Context) error {
 		if toDisabled {
-			if err := r.stoppableStream.Replace(ctx, func() (common.Stoppable, error) {
+			if err := r.stoppableStream.Replace(ctx, func() (common.RunningStream, error) {
 				return &noopStopper{}, nil
 			}); err != nil {
 				return err
 			}
 		} else if r.latestMainConf != nil && r.mgr != nil {
-			if err := r.stoppableStream.Replace(ctx, func() (common.Stoppable, error) {
-				return stream.New(*r.latestMainConf, r.mgr)
+			if err := r.stoppableStream.Replace(ctx, func() (common.RunningStream, error) {
+				return initStream(*r.latestMainConf, r.mgr)
 			}); err != nil {
 				return err
 			}
@@ -212,7 +242,7 @@ func (r *PullRunner) setStreamDisabled(ctx context.Context, toDisabled bool) err
 
 func (r *PullRunner) triggerStreamReset(ctx context.Context, conf *config.Type, mgr bundle.NewManagement) error {
 	r.latestMainConf = &conf.Config
-	if logger, err := common.CreateLogger(r.cliContext, *conf, false); err == nil {
+	if logger, err := common.CreateLogger(r.cliContext, r.cliOpts, *conf, false); err == nil {
 		r.logger.swap(logger)
 	}
 
@@ -220,15 +250,15 @@ func (r *PullRunner) triggerStreamReset(ctx context.Context, conf *config.Type, 
 		return nil
 	}
 	return r.withExitContext(ctx, func(ctx context.Context) error {
-		return r.stoppableStream.Replace(ctx, func() (common.Stoppable, error) {
-			return stream.New(conf.Config, mgr)
+		return r.stoppableStream.Replace(ctx, func() (common.RunningStream, error) {
+			return initStream(conf.Config, mgr)
 		})
 	})
 }
 
 func (r *PullRunner) bootstrapConfigReader(ctx context.Context) (bootstrapErr error) {
-	initMainFile := r.cliContext.String("config")
-	initResources := r.cliContext.StringSlice("resources")
+	initMainFile := r.cliOpts.RootFlags.GetConfig(r.cliContext)
+	initResources := r.cliOpts.RootFlags.GetResources(r.cliContext)
 	initFiles := r.sessionTracker.Files()
 	if initFiles.MainConfig != nil {
 		initMainFile = initFiles.MainConfig.Name
@@ -242,19 +272,22 @@ func (r *PullRunner) bootstrapConfigReader(ctx context.Context) (bootstrapErr er
 		backup:  ifs.OS(),
 	}
 
-	bloblEnv := ibloblang.GlobalEnvironment().WithCustomImporter(func(name string) ([]byte, error) {
+	bloblEnv := r.bloblEnvironment.WithCustomImporter(func(name string) ([]byte, error) {
 		return ifs.ReadFile(sessFS, name)
 	})
 
-	lintConf := docs.NewLintConfig(bundle.GlobalEnvironment)
-	lintConf.BloblangEnv = bloblang.XWrapEnvironment(bloblEnv).Deactivated()
+	lintConf := docs.NewLintConfig(r.environment)
+	lintConf.BloblangEnv = bloblang.XWrapEnvironment(bloblEnv.Deactivated())
 
 	confReaderTmp := config.NewReader(initMainFile, initResources,
-		config.OptAddOverrides(r.cliContext.StringSlice("set")...),
+		config.OptUseEnvLookupFunc(r.secretLookupFn),
+		config.OptAddOverrides(r.cliOpts.RootFlags.GetSet(r.cliContext)...),
 		config.OptTestSuffix("_benthos_test"),
 		config.OptUseFS(sessFS),
 		config.OptSetLintConfig(lintConf),
-		config.OptSetFullSpec(r.confReaderSpec),
+		config.OptSetFullSpec(func() docs.FieldSpecs {
+			return r.confReaderSpec
+		}),
 	)
 
 	defer func() {
@@ -265,7 +298,7 @@ func (r *PullRunner) bootstrapConfigReader(ctx context.Context) (bootstrapErr er
 		}
 	}()
 
-	conf, lints, err := confReaderTmp.Read()
+	conf, _, lints, err := confReaderTmp.Read()
 	if err != nil {
 		return fmt.Errorf("failed bootstrap config read: %w", err)
 	}
@@ -274,11 +307,11 @@ func (r *PullRunner) bootstrapConfigReader(ctx context.Context) (bootstrapErr er
 		return errors.New("found linting errors in config")
 	}
 
-	tmpEnv, tmpTracingSummary := tracing.TracedBundle(bundle.GlobalEnvironment)
+	tmpEnv, tmpTracingSummary := tracing.TracedBundle(r.environment)
 	tmpTracingSummary.SetEnabled(false)
 
 	stopMgrTmp, err := common.CreateManager(
-		r.cliContext, r.logger, false, r.version, r.dateBuilt, conf,
+		r.cliContext, r.cliOpts, r.logger, false, conf,
 		manager.OptSetEnvironment(tmpEnv),
 		manager.OptSetBloblangEnvironment(bloblEnv),
 		manager.OptSetFS(sessFS))
@@ -294,6 +327,11 @@ func (r *PullRunner) bootstrapConfigReader(ctx context.Context) (bootstrapErr er
 	}()
 
 	mgrTmp := stopMgrTmp.Manager().WithAddedMetrics(r.metrics)
+
+	if err := r.cliOpts.OnManagerInitialised(mgrTmp, nil); err != nil {
+		return fmt.Errorf("failed to execute manager initialisation hook: %w", err)
+	}
+
 	if err := r.triggerStreamReset(ctx, &conf, mgrTmp); err != nil {
 		return fmt.Errorf("failed initial stream reset: %w", err)
 	}
@@ -458,7 +496,7 @@ func (r *PullRunner) Stop(ctx context.Context) error {
 				"Service failed to close the running stream cleanly within allocated time: %v."+
 					" Exiting forcefully and dumping stack trace to stderr\n", err,
 			)
-			_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+			_ = pprof.Lookup("goroutine").WriteTo(r.cliOpts.Stderr, 1)
 			return err
 		}
 		if r.stoppableMgr == nil {
@@ -469,7 +507,7 @@ func (r *PullRunner) Stop(ctx context.Context) error {
 				"Service failed to close resources cleanly within allocated time: %v."+
 					" Exiting forcefully and dumping stack trace to stderr\n", err,
 			)
-			_ = pprof.Lookup("goroutine").WriteTo(os.Stderr, 1)
+			_ = pprof.Lookup("goroutine").WriteTo(r.cliOpts.Stderr, 1)
 			return err
 		}
 		return nil

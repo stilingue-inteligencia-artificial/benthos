@@ -1,3 +1,6 @@
+//go:build !wasm
+
+// Copyright 2025 Redpanda Data, Inc.
 package io
 
 import (
@@ -19,37 +22,44 @@ import (
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/codec/interop"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service/codec"
+	"github.com/redpanda-data/benthos/v4/public/utils/netutil"
 )
 
 const (
-	issFieldNetwork       = "network"
-	issFieldAddress       = "address"
-	issFieldAddressCache  = "address_cache"
-	issFieldTLS           = "tls"
-	issFieldTLSCertFile   = "cert_file"
-	issFieldTLSKeyFile    = "key_file"
-	issFieldTLSSelfSigned = "self_signed"
+	issFieldNetwork                    = "network"
+	issFieldAddress                    = "address"
+	issFieldAddressCache               = "address_cache"
+	issFieldTLS                        = "tls"
+	issFieldTLSCertFile                = "cert_file"
+	issFieldTLSKeyFile                 = "key_file"
+	issFieldTLSSelfSigned              = "self_signed"
+	issFieldTLSClientAuth              = "client_auth"
+	issFieldTLSClientAuthNoClientCert  = "no"
+	issFieldTLSClientAuthRequestCert   = "request"
+	issFieldTLSClientAuthRequireAny    = "require_any"
+	issFieldTLSClientAuthRequireValid  = "require_valid"
+	issFieldTLSClientAuthVerifyIfGiven = "verify_if_given"
 )
 
 func socketServerInputSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Stable().
-		Summary(`Creates a server that receives a stream of messages over a tcp, udp or unix socket.`).
+		Summary(`Creates a server that receives a stream of messages over a TCP, UDP or Unix socket.`).
 		Categories("Network").
 		Fields(
-			service.NewStringEnumField(issFieldNetwork, "unix", "tcp", "udp", "tls").
+			service.NewStringEnumField(issFieldNetwork, "unix", "tcp", "udp", "tls", "unixgram").
 				Description("A network type to accept."),
-			service.NewStringField(isFieldAddress).
+			service.NewStringField(issFieldAddress).
 				Description("The address to listen from.").
 				Examples("/tmp/benthos.sock", "0.0.0.0:6000"),
 			service.NewStringField(issFieldAddressCache).
-				Description("An optional [`cache`](/docs/components/caches/about) within which this input should write it's bound address once known. The key of the cache item containing the address will be the label of the component suffixed with `_address` (e.g. `foo_address`), or `socket_server_address` when a label has not been provided. This is useful in situations where the address is dynamically allocated by the server (`127.0.0.1:0`) and you want to store the allocated address somewhere for reference by other systems and components.").
+				Description("An optional xref:components:caches/about.adoc[`cache`] within which this input should write it's bound address once known. The key of the cache item containing the address will be the label of the component suffixed with `_address` (e.g. `foo_address`), or `socket_server_address` when a label has not been provided. This is useful in situations where the address is dynamically allocated by the server (`127.0.0.1:0`) and you want to store the allocated address somewhere for reference by other systems and components.").
 				Optional().
 				Version("4.25.0"),
+			netutil.ListenerConfigSpec(),
 			service.NewObjectField(issFieldTLS,
 				service.NewStringField(issFieldTLSCertFile).
 					Description("PEM encoded certificate for use with TLS.").
@@ -60,25 +70,32 @@ func socketServerInputSpec() *service.ConfigSpec {
 				service.NewBoolField(issFieldTLSSelfSigned).
 					Description("Whether to generate self signed certificates.").
 					Default(false),
+				service.NewStringAnnotatedEnumField(issFieldTLSClientAuth, map[string]string{
+					issFieldTLSClientAuthNoClientCert:  "client certificate is not requested nor required.",
+					issFieldTLSClientAuthRequestCert:   "will request client certificate, not require it.",
+					issFieldTLSClientAuthRequireAny:    "will accept any client certificate, even if not valid.",
+					issFieldTLSClientAuthRequireValid:  "requires a valid client certificate.",
+					issFieldTLSClientAuthVerifyIfGiven: "will verify a certificate, if one is sent by the client.",
+				}).
+					Description("How client authentication is handled.").
+					Default(issFieldTLSClientAuthNoClientCert).
+					Version("4.44.1"),
 			).
 				Description("TLS specific configuration, valid when the `network` is set to `tls`.").
 				Optional(),
 			service.NewAutoRetryNacksToggleField(),
 		).
-		Fields(interop.OldReaderCodecFields("lines")...)
+		Fields(codec.DeprecatedCodecFields("lines")...)
 }
 
 func init() {
-	err := service.RegisterBatchInput("socket_server", socketServerInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
+	service.MustRegisterBatchInput("socket_server", socketServerInputSpec(), func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchInput, error) {
 		i, err := newSocketServerInputFromParsed(conf, mgr)
 		if err != nil {
 			return nil, err
 		}
 		return service.AutoRetryNacksBatchedToggled(conf, i)
 	})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type wrapPacketConn struct {
@@ -87,7 +104,7 @@ type wrapPacketConn struct {
 
 func (w *wrapPacketConn) Read(p []byte) (n int, err error) {
 	n, _, err = w.ReadFrom(p)
-	return
+	return n, err
 }
 
 type socketServerInput struct {
@@ -100,7 +117,9 @@ type socketServerInput struct {
 	tlsCert       string
 	tlsKey        string
 	tlsSelfSigned bool
-	codecCtor     interop.FallbackReaderCodec
+	tlsClientAuth tls.ClientAuthType
+	codecCtor     codec.DeprecatedFallbackCodec
+	listenerConf  netutil.ListenerConfig
 
 	messages chan service.MessageBatch
 	shutSig  *shutdown.Signaller
@@ -115,10 +134,10 @@ func newSocketServerInputFromParsed(conf *service.ParsedConfig, mgr *service.Res
 	}
 
 	if t.network, err = conf.FieldString(issFieldNetwork); err != nil {
-		return
+		return i, err
 	}
 	if t.address, err = conf.FieldString(issFieldAddress); err != nil {
-		return
+		return i, err
 	}
 	t.addressCache, _ = conf.FieldString(issFieldAddressCache)
 
@@ -127,9 +146,29 @@ func newSocketServerInputFromParsed(conf *service.ParsedConfig, mgr *service.Res
 	t.tlsKey, _ = tlsConf.FieldString(issFieldTLSKeyFile)
 	t.tlsSelfSigned, _ = tlsConf.FieldBool(issFieldTLSSelfSigned)
 
-	if t.codecCtor, err = interop.OldReaderCodecFromParsed(conf); err != nil {
-		return
+	tlsConfClientAuth, _ := tlsConf.FieldString(issFieldTLSClientAuth)
+	switch tlsConfClientAuth {
+	case issFieldTLSClientAuthNoClientCert:
+		t.tlsClientAuth = tls.NoClientCert
+	case issFieldTLSClientAuthRequestCert:
+		t.tlsClientAuth = tls.RequestClientCert
+	case issFieldTLSClientAuthRequireAny:
+		t.tlsClientAuth = tls.RequireAnyClientCert
+	case issFieldTLSClientAuthRequireValid:
+		t.tlsClientAuth = tls.RequireAndVerifyClientCert
+	case issFieldTLSClientAuthVerifyIfGiven:
+		t.tlsClientAuth = tls.VerifyClientCertIfGiven
+	default:
+		return i, err
 	}
+
+	if t.codecCtor, err = codec.DeprecatedCodecFromParsed(conf); err != nil {
+		return i, err
+	}
+	if t.listenerConf, err = netutil.ListenerConfigFromParsed(conf.Namespace("tcp")); err != nil {
+		return i, err
+	}
+
 	return &t, nil
 }
 
@@ -138,9 +177,13 @@ func (t *socketServerInput) Connect(ctx context.Context) error {
 	var cn net.PacketConn
 
 	var err error
+	lc := net.ListenConfig{}
+	if err = netutil.DecorateListenerConfig(&lc, t.listenerConf); err != nil {
+		return fmt.Errorf("failed to apply listener config: %w", err)
+	}
 	switch t.network {
 	case "tcp", "unix":
-		ln, err = net.Listen(t.network, t.address)
+		ln, err = lc.Listen(ctx, t.network, t.address)
 	case "tls":
 		var cert tls.Certificate
 		if cert, err = loadOrCreateCertificate(t.tlsCert, t.tlsKey, t.tlsSelfSigned); err != nil {
@@ -148,10 +191,16 @@ func (t *socketServerInput) Connect(ctx context.Context) error {
 		}
 		config := &tls.Config{
 			Certificates: []tls.Certificate{cert},
+			ClientAuth:   t.tlsClientAuth,
 		}
-		ln, err = tls.Listen("tcp", t.address, config)
-	case "udp":
-		cn, err = net.ListenPacket(t.network, t.address)
+		var baseListener net.Listener
+		baseListener, err = lc.Listen(ctx, "tcp", t.address)
+		if err != nil {
+			break
+		}
+		ln = tls.NewListener(baseListener, config)
+	case "udp", "unixgram":
+		cn, err = lc.ListenPacket(ctx, t.network, t.address)
 	default:
 		return fmt.Errorf("socket network '%v' is not supported by this input", t.network)
 	}
@@ -171,7 +220,7 @@ func (t *socketServerInput) Connect(ctx context.Context) error {
 		t.log.Infof("Receiving %v socket messages from address: %v", t.network, addr.String())
 	} else {
 		addr = cn.LocalAddr()
-		t.log.Infof("Receiving udp socket messages from address: %v", addr.String())
+		t.log.Infof("Receiving %v socket messages from address: %v", t.network, addr.String())
 	}
 	if t.addressCache != "" {
 		key := "socket_server_address"
@@ -248,7 +297,7 @@ acceptLoop:
 
 			codec, err := t.codecCtor.Create(c, func(ctx context.Context, err error) error {
 				return nil
-			}, scanner.SourceDetails{})
+			}, service.NewScannerSourceDetails())
 			if err != nil {
 				t.log.Errorf("Failed to create codec for new connection: %v", err)
 				return
@@ -294,7 +343,7 @@ func (t *socketServerInput) udpLoop(conn net.PacketConn) {
 
 	codec, err := t.codecCtor.Create(&wrapPacketConn{PacketConn: conn}, func(ctx context.Context, err error) error {
 		return nil
-	}, scanner.SourceDetails{})
+	}, service.NewScannerSourceDetails())
 	if err != nil {
 		t.log.Errorf("Connection error due to: %v", err)
 		return

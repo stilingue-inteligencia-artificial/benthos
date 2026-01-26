@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package cuegen
 
 import (
@@ -6,7 +8,7 @@ import (
 	"cuelang.org/go/cue/ast"
 	"cuelang.org/go/cue/token"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 type componentOptions struct {

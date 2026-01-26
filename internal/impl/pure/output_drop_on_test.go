@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure_test
 
 import (
@@ -15,17 +17,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/testutil"
-	bmock "github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/testutil"
+	bmock "github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 
-	_ "github.com/benthosdev/benthos/v4/public/components/pure"
+	_ "github.com/redpanda-data/benthos/v4/public/components/pure"
 )
 
-func parseYAMLOutputConf(t testing.TB, formatStr string, args ...any) output.Config {
+func parseYAMLOutputConff(t testing.TB, formatStr string, args ...any) output.Config {
+	return parseYAMLOutputConf(t, fmt.Sprintf(formatStr, args...))
+}
+
+func parseYAMLOutputConf(t testing.TB, confStr string) output.Config {
 	t.Helper()
-	conf, err := testutil.OutputFromYAML(fmt.Sprintf(formatStr, args...))
+	conf, err := testutil.OutputFromYAML(confStr)
 	require.NoError(t, err)
 	return conf
 }
@@ -38,7 +44,7 @@ func TestDropOnNothing(t *testing.T) {
 		ts.Close()
 	})
 
-	dropConf := parseYAMLOutputConf(t, `
+	dropConf := parseYAMLOutputConff(t, `
 drop_on:
   error: false
   output:
@@ -60,6 +66,8 @@ drop_on:
 	rChan := make(chan error)
 
 	require.NoError(t, d.Consume(tChan))
+
+	d.TriggerStartConsuming()
 
 	select {
 	case tChan <- message.NewTransaction(message.QuickBatch([][]byte{[]byte("foobar")}), rChan):
@@ -85,7 +93,7 @@ func TestDropOnError(t *testing.T) {
 		ts.Close()
 	})
 
-	dropConf := parseYAMLOutputConf(t, `
+	dropConf := parseYAMLOutputConff(t, `
 drop_on:
   error: true
   output:
@@ -107,6 +115,8 @@ drop_on:
 	rChan := make(chan error)
 
 	require.NoError(t, d.Consume(tChan))
+
+	d.TriggerStartConsuming()
 
 	select {
 	case tChan <- message.NewTransaction(message.QuickBatch([][]byte{[]byte("foobar")}), rChan):
@@ -162,7 +172,7 @@ func TestDropOnBackpressureWithErrors(t *testing.T) {
 		ts.Close()
 	})
 
-	dropConf := parseYAMLOutputConf(t, `
+	dropConf := parseYAMLOutputConff(t, `
 drop_on:
   back_pressure: 100ms
   output:
@@ -173,7 +183,7 @@ drop_on:
 	d, err := bmock.NewManager().NewOutput(dropConf)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+		ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 		d.TriggerCloseNow()
 		assert.NoError(t, d.WaitForClose(ctx))
 		done()
@@ -183,6 +193,8 @@ drop_on:
 	rChan := make(chan error)
 
 	require.NoError(t, d.Consume(tChan))
+
+	d.TriggerStartConsuming()
 
 	sendAndGet := func(msg, expErr string) {
 		t.Helper()
@@ -250,7 +262,7 @@ func TestDropOnDisconnectBackpressureNoErrors(t *testing.T) {
 		ts.Close()
 	})
 
-	dropConf := parseYAMLOutputConf(t, `
+	dropConf := parseYAMLOutputConff(t, `
 drop_on:
   back_pressure: 100ms
   error: true
@@ -262,7 +274,7 @@ drop_on:
 	d, err := bmock.NewManager().NewOutput(dropConf)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+		ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 		d.TriggerCloseNow()
 		assert.NoError(t, d.WaitForClose(ctx))
 		done()
@@ -272,6 +284,8 @@ drop_on:
 	rChan := make(chan error)
 
 	require.NoError(t, d.Consume(tChan))
+
+	d.TriggerStartConsuming()
 
 	sendAndGet := func(msg, expErr string) {
 		t.Helper()
@@ -320,7 +334,7 @@ func TestDropOnErrorMatches(t *testing.T) {
 		ts.Close()
 	})
 
-	dropConf := parseYAMLOutputConf(t, `
+	dropConf := parseYAMLOutputConff(t, `
 drop_on:
   error_patterns:
     - foobar
@@ -343,6 +357,8 @@ drop_on:
 	rChan := make(chan error)
 
 	require.NoError(t, d.Consume(tChan))
+
+	d.TriggerStartConsuming()
 
 	select {
 	case tChan <- message.NewTransaction(message.QuickBatch([][]byte{[]byte("error doesnt match")}), rChan):

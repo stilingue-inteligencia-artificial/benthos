@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 // Package bundle contains singletons referenced throughout the Benthos codebase
 // that allow imported components to add their constructors and documentation to
 // a service.
@@ -16,19 +18,19 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang"
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/component/buffer"
-	"github.com/benthosdev/benthos/v4/internal/component/cache"
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/component/ratelimit"
-	"github.com/benthosdev/benthos/v4/internal/component/scanner"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/component/buffer"
+	"github.com/redpanda-data/benthos/v4/internal/component/cache"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/component/ratelimit"
+	"github.com/redpanda-data/benthos/v4/internal/component/scanner"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var (
@@ -42,6 +44,8 @@ type NewManagement interface {
 	ForStream(id string) NewManagement
 	IntoPath(segments ...string) NewManagement
 	WithAddedMetrics(m metrics.Type) NewManagement
+
+	EngineVersion() string
 
 	Path() []string
 	Label() string
@@ -91,6 +95,10 @@ type NewManagement interface {
 	GetPipe(name string) (<-chan message.Transaction, error)
 	SetPipe(name string, t <-chan message.Transaction)
 	UnsetPipe(name string, t <-chan message.Transaction)
+
+	GetGeneric(key any) (any, bool)
+	GetOrSetGeneric(key, value any) (actual any, loaded bool)
+	SetGeneric(key, value any)
 }
 
 type componentErr struct {

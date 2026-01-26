@@ -1,11 +1,15 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/component/input/batcher"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/component/input/batcher"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // AckFunc is a common function returned by inputs that must be called once for
@@ -98,11 +102,20 @@ type BatchInput interface {
 
 // Implements input.AsyncReader.
 type airGapReader struct {
+	o bundle.NewManagement
 	r Input
 }
 
-func newAirGapReader(r Input) input.Async {
-	return &airGapReader{r: r}
+func newAirGapReader(o bundle.NewManagement, r Input) input.Async {
+	return &airGapReader{o: o, r: r}
+}
+
+func (a *airGapReader) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	t, ok := a.r.(ConnectionTestable)
+	if !ok {
+		return component.ConnectionTestNotSupported(a.o).AsList()
+	}
+	return t.ConnectionTest(ctx).intoInternal(a.o)
 }
 
 func (a *airGapReader) Connect(ctx context.Context) error {
@@ -122,18 +135,27 @@ func (a *airGapReader) ReadBatch(ctx context.Context) (message.Batch, input.Asyn
 }
 
 func (a *airGapReader) Close(ctx context.Context) error {
-	return a.r.Close(ctx)
+	return publicToInternalErr(a.r.Close(ctx))
 }
 
 //------------------------------------------------------------------------------
 
 // Implements input.AsyncReader.
 type airGapBatchReader struct {
+	o bundle.NewManagement
 	r BatchInput
 }
 
-func newAirGapBatchReader(r BatchInput) input.Async {
-	return &airGapBatchReader{r: r}
+func newAirGapBatchReader(o bundle.NewManagement, r BatchInput) input.Async {
+	return &airGapBatchReader{o: o, r: r}
+}
+
+func (a *airGapBatchReader) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	t, ok := a.r.(ConnectionTestable)
+	if !ok {
+		return component.ConnectionTestNotSupported(a.o).AsList()
+	}
+	return t.ConnectionTest(ctx).intoInternal(a.o)
 }
 
 func (a *airGapBatchReader) Connect(ctx context.Context) error {
@@ -157,7 +179,7 @@ func (a *airGapBatchReader) ReadBatch(ctx context.Context) (message.Batch, input
 }
 
 func (a *airGapBatchReader) Close(ctx context.Context) error {
-	return a.r.Close(ctx)
+	return publicToInternalErr(a.r.Close(ctx))
 }
 
 //------------------------------------------------------------------------------
@@ -171,6 +193,11 @@ func newResourceInput(i input.Streamed) *ResourceInput {
 	return &ResourceInput{i: i}
 }
 
+// ConnectionTest attempts to run a connection test on the owned input.
+func (r *ResourceInput) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	return connectionTestResultsFromInternal(r.i.ConnectionTest(ctx))
+}
+
 // ReadBatch attempts to read a message batch from the input, along with a
 // function to be called once the entire batch can be either acked (successfully
 // sent or intentionally filtered) or nacked (failed to be processed or
@@ -179,6 +206,8 @@ func newResourceInput(i input.Streamed) *ResourceInput {
 // If this method returns ErrEndOfInput then that indicates that the input has
 // finished and will no longer yield new messages.
 func (r *ResourceInput) ReadBatch(ctx context.Context) (MessageBatch, AckFunc, error) {
+	r.i.TriggerStartConsuming()
+
 	var tran message.Transaction
 	var open bool
 	select {
@@ -219,6 +248,11 @@ func (o *OwnedInput) BatchedWith(b *Batcher) *OwnedInput {
 	}
 }
 
+// ConnectionTest attempts to run a connection test on the owned input.
+func (o *OwnedInput) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	return connectionTestResultsFromInternal(o.i.ConnectionTest(ctx))
+}
+
 // ReadBatch attempts to read a message batch from the input, along with a
 // function to be called once the entire batch can be either acked (successfully
 // sent or intentionally filtered) or nacked (failed to be processed or
@@ -227,6 +261,8 @@ func (o *OwnedInput) BatchedWith(b *Batcher) *OwnedInput {
 // If this method returns ErrEndOfInput then that indicates that the input has
 // finished and will no longer yield new messages.
 func (o *OwnedInput) ReadBatch(ctx context.Context) (MessageBatch, AckFunc, error) {
+	o.i.TriggerStartConsuming() // This is safe to call multiple times
+
 	var tran message.Transaction
 	var open bool
 	select {

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package processor
 
 import (
@@ -5,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type passthrough struct {
@@ -27,7 +29,7 @@ func TestExecuteAllBasic(t *testing.T) {
 		&passthrough{},
 	}
 
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	msg := message.QuickBatch([][]byte{[]byte("test message")})
 	msgs, res := ExecuteAll(tCtx, procs, msg)
@@ -51,7 +53,7 @@ func TestExecuteAllBasic(t *testing.T) {
 }
 
 func TestExecuteAllBasicBatch(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	procs := []V1{
 		&passthrough{},
@@ -84,7 +86,7 @@ func TestExecuteAllBasicBatch(t *testing.T) {
 }
 
 func TestExecuteAllMulti(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	procs := []V1{
 		&passthrough{},
@@ -133,7 +135,7 @@ func (p *errored) Close(ctx context.Context) error {
 }
 
 func TestExecuteAllErrored(t *testing.T) {
-	tCtx := context.Background()
+	tCtx := t.Context()
 
 	procs := []V1{
 		&passthrough{},

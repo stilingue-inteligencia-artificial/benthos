@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -5,7 +7,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
@@ -24,13 +26,10 @@ func ssbScannerSpec() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterBatchScannerCreator("skip_bom", ssbScannerSpec(),
+	service.MustRegisterBatchScannerCreator("skip_bom", ssbScannerSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchScannerCreator, error) {
 			return ssbScannerFromParsed(conf)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func ssbScannerFromParsed(conf *service.ParsedConfig) (l *ssbScannerCreator, err error) {
@@ -99,15 +98,15 @@ groupLoop:
 	}
 }
 
-func readUpToMax(r io.Reader, max int) (buf []byte, err error) {
-	if max == 0 {
+func readUpToMax(r io.Reader, maxV int) (buf []byte, err error) {
+	if maxV == 0 {
 		return
 	}
 
-	buf = make([]byte, max)
+	buf = make([]byte, maxV)
 
 	var readLen int
-	for err == nil && readLen < max {
+	for err == nil && readLen < maxV {
 		var n int
 		n, err = r.Read(buf[readLen:])
 		readLen += n

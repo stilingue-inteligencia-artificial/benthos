@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,13 +8,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/filepath/ifs"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/filepath/ifs"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 
 	jsonschema "github.com/xeipuuv/gojsonschema"
 )
@@ -26,10 +28,10 @@ func jschemaProcSpec() *service.ConfigSpec {
 	return service.NewConfigSpec().
 		Categories("Mapping").
 		Stable().
-		Summary(`Checks messages against a provided JSONSchema definition but does not change the payload under any circumstances. If a message does not match the schema it can be caught using error handling methods outlined [here](/docs/configuration/error_handling).`).
-		Description(`Please refer to the [JSON Schema website](https://json-schema.org/) for information and tutorials regarding the syntax of the schema.`).
+		Summary(`Checks messages against a provided JSONSchema definition but does not change the payload under any circumstances. If a message does not match the schema it can be caught using xref:configuration:error_handling.adoc[error handling methods].`).
+		Description(`Please refer to the https://json-schema.org/[JSON Schema website^] for information and tutorials regarding the syntax of the schema.`).
 		Footnotes(`
-## Examples
+== Examples
 
 With the following JSONSchema document:
 
@@ -57,7 +59,7 @@ With the following JSONSchema document:
 }
 `+"```"+`
 
-And the following Benthos configuration:
+And the following Redpanda Connect configuration:
 
 `+"```yaml"+`
 pipeline:
@@ -90,7 +92,7 @@ dropped.`).
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"json_schema", jschemaProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			schemaStr, _ := conf.FieldString(jschemaPFieldSchema)
@@ -102,9 +104,6 @@ func init() {
 			}
 			return interop.NewUnwrapInternalBatchProcessor(processor.NewAutoObservedProcessor("json_schema", p, mgr)), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type jsonSchemaProc struct {
@@ -118,7 +117,7 @@ func newJSONSchema(schemaStr, schemaPath string, mgr bundle.NewManagement) (proc
 
 	// load JSONSchema definition
 	if schemaPath := schemaPath; schemaPath != "" {
-		if !(strings.HasPrefix(schemaPath, "file://") || strings.HasPrefix(schemaPath, "http://")) {
+		if !strings.HasPrefix(schemaPath, "file://") && !strings.HasPrefix(schemaPath, "http://") {
 			return nil, errors.New("invalid schema_path provided, must start with file:// or http://")
 		}
 

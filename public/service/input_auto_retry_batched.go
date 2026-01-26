@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package service
 
 import (
@@ -5,9 +7,9 @@ import (
 	"errors"
 	"sync/atomic"
 
-	"github.com/benthosdev/benthos/v4/internal/autoretry"
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/autoretry"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // AutoRetryNacksBatchedToggled wraps an input implementation with
@@ -99,6 +101,14 @@ type autoRetryInputBatched struct {
 	retryList   *autoretry.List[MessageBatch]
 	child       BatchInput
 	inputClosed int32
+}
+
+func (i *autoRetryInputBatched) ConnectionTest(ctx context.Context) ConnectionTestResults {
+	t, ok := i.child.(ConnectionTestable)
+	if !ok {
+		return ConnectionTestNotSupported().AsList()
+	}
+	return t.ConnectionTest(ctx)
 }
 
 func (i *autoRetryInputBatched) Connect(ctx context.Context) error {

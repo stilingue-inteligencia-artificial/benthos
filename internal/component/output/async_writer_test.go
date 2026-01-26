@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package output
 
 import (
@@ -11,8 +13,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type mockAsyncWriter struct {
@@ -29,6 +31,10 @@ func newAsyncMockWriter() *mockAsyncWriter {
 	}
 }
 
+func (w *mockAsyncWriter) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return nil
+}
+
 func (w *mockAsyncWriter) Connect(ctx context.Context) error {
 	return <-w.connChan
 }
@@ -41,6 +47,10 @@ func (w *mockAsyncWriter) Close(context.Context) error { return nil }
 
 type writerCantConnect struct{}
 
+func (w writerCantConnect) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return nil
+}
+
 func (w writerCantConnect) Connect(ctx context.Context) error {
 	return component.ErrNotConnected
 }
@@ -52,6 +62,10 @@ func (w writerCantConnect) Close(context.Context) error { return nil }
 
 type writerCantSend struct {
 	connected int
+}
+
+func (w *writerCantSend) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return nil
 }
 
 func (w *writerCantSend) Connect(ctx context.Context) error {
@@ -81,7 +95,9 @@ func TestAsyncWriterCantConnect(t *testing.T) {
 		t.Error("Expected error from duplicate receiver call")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	w.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	// We will fail to connect but should still exit immediately.
@@ -108,7 +124,9 @@ func TestAsyncWriterCantSendClosed(t *testing.T) {
 		t.Error(err)
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	w.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	w.TriggerCloseNow()
@@ -132,9 +150,11 @@ func TestAsyncWriterCantSendClosedChan(t *testing.T) {
 		t.Error(err)
 	}
 
+	w.TriggerStartConsuming()
+
 	close(msgChan)
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, w.WaitForClose(ctx))
@@ -159,13 +179,15 @@ func TestAsyncWriterStartClosed(t *testing.T) {
 		t.Error(err)
 	}
 
+	w.TriggerStartConsuming()
+
 	select {
 	case writerImpl.connChan <- component.ErrTypeClosed:
 	case <-time.After(time.Second):
 		t.Fatal("Timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, w.WaitForClose(ctx))
@@ -188,6 +210,8 @@ func TestAsyncWriterClosesOnReconn(t *testing.T) {
 	if err = w.Consume(msgChan); err != nil {
 		t.Error(err)
 	}
+
+	w.TriggerStartConsuming()
 
 	select {
 	case writerImpl.connChan <- nil:
@@ -214,7 +238,7 @@ func TestAsyncWriterClosesOnReconn(t *testing.T) {
 		t.Error("Timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, w.WaitForClose(ctx))
@@ -237,6 +261,8 @@ func TestAsyncWriterClosesOnResend(t *testing.T) {
 	if err = w.Consume(msgChan); err != nil {
 		t.Error(err)
 	}
+
+	w.TriggerStartConsuming()
 
 	select {
 	case writerImpl.connChan <- nil:
@@ -268,7 +294,7 @@ func TestAsyncWriterClosesOnResend(t *testing.T) {
 		t.Error("Timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, w.WaitForClose(ctx))
@@ -293,6 +319,8 @@ func TestAsyncWriterCanReconnect(t *testing.T) {
 	if err = w.Consume(msgChan); err != nil {
 		t.Error(err)
 	}
+
+	w.TriggerStartConsuming()
 
 	select {
 	case writerImpl.connChan <- nil:
@@ -335,7 +363,7 @@ func TestAsyncWriterCanReconnect(t *testing.T) {
 		t.Error("Timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	w.TriggerCloseNow()
@@ -359,6 +387,8 @@ func TestAsyncWriterCanReconnectAsync(t *testing.T) {
 	if err = w.Consume(msgChan); err != nil {
 		t.Error(err)
 	}
+
+	w.TriggerStartConsuming()
 
 	select {
 	case writerImpl.connChan <- nil:
@@ -440,7 +470,7 @@ func TestAsyncWriterCanReconnectAsync(t *testing.T) {
 	}
 	<-doneChan
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	w.TriggerCloseNow()
@@ -465,6 +495,8 @@ func TestAsyncWriterCantReconnect(t *testing.T) {
 	if err = w.Consume(msgChan); err != nil {
 		t.Error(err)
 	}
+
+	w.TriggerStartConsuming()
 
 	go func() {
 		select {
@@ -501,7 +533,7 @@ func TestAsyncWriterCantReconnect(t *testing.T) {
 		}
 	}()
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	require.NoError(t, w.WaitForClose(ctx))
@@ -526,6 +558,8 @@ func TestAsyncWriterHappyPath(t *testing.T) {
 	if err = w.Consume(msgChan); err != nil {
 		t.Error(err)
 	}
+
+	w.TriggerStartConsuming()
 
 	go func() {
 		select {
@@ -554,7 +588,7 @@ func TestAsyncWriterHappyPath(t *testing.T) {
 		t.Fatal("Timed out")
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	// We will be failing to send but should still exit immediately.
@@ -590,6 +624,8 @@ func TestAsyncWriterSadPath(t *testing.T) {
 		t.Error(err)
 	}
 
+	w.TriggerStartConsuming()
+
 	go func() {
 		select {
 		case msgChan <- message.NewTransaction(message.QuickBatch(exp), resChan):
@@ -622,7 +658,7 @@ func TestAsyncWriterSadPath(t *testing.T) {
 	}
 
 	// We will be failing to send but should still exit immediately.
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	w.TriggerCloseNow()

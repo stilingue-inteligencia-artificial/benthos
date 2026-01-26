@@ -1,33 +1,35 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"fmt"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/bloblang/query"
-	"github.com/benthosdev/benthos/v4/internal/value"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/bloblang/query"
+	"github.com/redpanda-data/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 func init() {
 	maxUint := ^uint64(0)
 	maxInt := maxUint >> 1
 
-	if err := bloblang.RegisterAdvancedFunction("counter",
+	bloblang.MustRegisterAdvancedFunction("counter",
 		bloblang.NewPluginSpec().
 			Category(query.FunctionCategoryGeneral).
 			Experimental().
-			Description("Returns a non-negative integer that increments each time it is resolved, yielding the minimum (`1` by default) as the first value. Each instantiation of `counter` has its own independent count. Once the maximum integer (or `max` argument) is reached the counter resets back to the minimum.").
+			Description("Generates an incrementing sequence of integers starting from a minimum value (default 1). Each counter instance maintains its own independent state across message processing. When the maximum value is reached, the counter automatically resets to the minimum.").
 			Param(bloblang.NewQueryParam("min", true).
 				Default(1).
-				Description("The minimum value of the counter, this is the first value that will be yielded. If this parameter is dynamic it will be resolved only once during the lifetime of the mapping.")).
+				Description("The starting value of the counter. This is the first value yielded. Evaluated once when the mapping is initialized.")).
 			Param(bloblang.NewQueryParam("max", true).
 				Default(maxInt).
-				Description("The maximum value of the counter, once this value is yielded the counter will reset back to the min. If this parameter is dynamic it will be resolved only once during the lifetime of the mapping.")).
+				Description("The maximum value before the counter resets to min. Evaluated once when the mapping is initialized.")).
 			Param(bloblang.NewQueryParam("set", false).
 				Optional().
-				Description("An optional mapping that when specified will be executed each time the counter is resolved. When this mapping resolves to a non-negative integer value it will cause the counter to reset to this value and yield it. If this mapping is omitted or doesn't resolve to anything then the counter will increment and yield the value as normal. If this mapping resolves to `null` then the counter is not incremented and the current value is yielded. If this mapping resolves to a deletion then the counter is reset to the `min` value.")).
-			Example("", `root.id = counter()`,
+				Description("An optional query that controls counter behavior: when it resolves to a non-negative integer, the counter is set to that value; when it resolves to `null`, the counter is read without incrementing; when it resolves to a deletion, the counter resets to min; otherwise the counter increments normally.")).
+			Example("Generate sequential IDs for each message.", `root.id = counter()`,
 				[2]string{
 					`{}`,
 					`{"id":1}`,
@@ -37,51 +39,62 @@ func init() {
 					`{"id":2}`,
 				},
 			).
-			Example("It's possible to increment a counter multiple times within a single mapping invocation using a map.",
+			Example("Use a custom range for the counter.",
+				`root.batch_num = counter(min: 100, max: 200)`,
+				[2]string{
+					`{}`,
+					`{"batch_num":100}`,
+				},
+				[2]string{
+					`{}`,
+					`{"batch_num":101}`,
+				},
+			).
+			Example("Increment a counter multiple times within a single mapping using a named map.",
 				`
-map foos {
+map increment {
   root = counter()
 }
 
-root.meow_id = null.apply("foos")
-root.woof_id = null.apply("foos")
+root.first_id = null.apply("increment")
+root.second_id = null.apply("increment")
 `,
 				[2]string{
 					`{}`,
-					`{"meow_id":1,"woof_id":2}`,
+					`{"first_id":1,"second_id":2}`,
 				},
 				[2]string{
 					`{}`,
-					`{"meow_id":3,"woof_id":4}`,
+					`{"first_id":3,"second_id":4}`,
 				},
 			).
 			Example(
-				"By specifying an optional `set` parameter it is possible to dynamically reset the counter based on input data.",
-				`root.consecutive_doggos = counter(min: 1, set: if !this.sound.lowercase().contains("woof") { 0 })`,
+				"Conditionally reset a counter based on input data.",
+				`root.streak = counter(set: if this.status != "success" { 0 })`,
 				[2]string{
-					`{"sound":"woof woof"}`,
-					`{"consecutive_doggos":1}`,
+					`{"status":"success"}`,
+					`{"streak":1}`,
 				},
 				[2]string{
-					`{"sound":"woofer wooooo"}`,
-					`{"consecutive_doggos":2}`,
+					`{"status":"success"}`,
+					`{"streak":2}`,
 				},
 				[2]string{
-					`{"sound":"meow"}`,
-					`{"consecutive_doggos":0}`,
+					`{"status":"failure"}`,
+					`{"streak":0}`,
 				},
 				[2]string{
-					`{"sound":"uuuuh uh uh woof uhhhhhh"}`,
-					`{"consecutive_doggos":1}`,
+					`{"status":"success"}`,
+					`{"streak":1}`,
 				},
 			).
 			Example(
-				"The `set` parameter can also be utilised to peek at the counter without mutating it by returning `null`.",
-				`root.things = counter(set: if this.id == null { null })`,
-				[2]string{`{"id":"a"}`, `{"things":1}`},
-				[2]string{`{"id":"b"}`, `{"things":2}`},
-				[2]string{`{"what":"just checking"}`, `{"things":2}`},
-				[2]string{`{"id":"c"}`, `{"things":3}`},
+				"Peek at the current counter value without incrementing by using null in the set parameter.",
+				`root.count = counter(set: if this.peek { null })`,
+				[2]string{`{"peek":false}`, `{"count":1}`},
+				[2]string{`{"peek":false}`, `{"count":2}`},
+				[2]string{`{"peek":true}`, `{"count":2}`},
+				[2]string{`{"peek":false}`, `{"count":3}`},
 			),
 		func(args *bloblang.ParsedParams) (bloblang.AdvancedFunction, error) {
 			minFunc, err := args.GetQuery("min")
@@ -99,7 +112,7 @@ root.woof_id = null.apply("foos")
 				return nil, err
 			}
 
-			var min, max int64
+			var minV, maxV int64
 			var i *int64
 
 			var mut sync.Mutex
@@ -110,20 +123,20 @@ root.woof_id = null.apply("foos")
 
 				if i == nil {
 					var err error
-					if min, err = ctx.ExecToInt64(minFunc); err != nil {
+					if minV, err = ctx.ExecToInt64(minFunc); err != nil {
 						return nil, fmt.Errorf("failed to resolve min argument: %w", err)
 					}
-					if min < 0 {
-						return nil, fmt.Errorf("min argument must be >0, got %v", min)
+					if minV < 0 {
+						return nil, fmt.Errorf("min argument must be >0, got %v", minV)
 					}
-					if max, err = ctx.ExecToInt64(maxFunc); err != nil {
+					if maxV, err = ctx.ExecToInt64(maxFunc); err != nil {
 						return nil, fmt.Errorf("failed to resolve max argument: %w", err)
 					}
-					if max < 0 || max <= min {
-						return nil, fmt.Errorf("max argument must be >0 and >min, got %v", max)
+					if maxV < 0 || maxV <= minV {
+						return nil, fmt.Errorf("max argument must be >0 and >min, got %v", maxV)
 					}
 
-					iV := min - 1
+					iV := minV - 1
 					i = &iV
 				}
 
@@ -137,7 +150,7 @@ root.woof_id = null.apply("foos")
 					}
 					switch setV.(type) {
 					case bloblang.ExecResultDelete:
-						*i = min - 1
+						*i = minV - 1
 					case bloblang.ExecResultNothing:
 					default:
 						iv, err := value.IGetInt(setV)
@@ -151,12 +164,10 @@ root.woof_id = null.apply("foos")
 
 				*i++
 				v := *i
-				if v >= max {
-					*i = min - 1
+				if v >= maxV {
+					*i = minV - 1
 				}
 				return v, nil
 			}, nil
-		}); err != nil {
-		panic(err)
-	}
+		})
 }

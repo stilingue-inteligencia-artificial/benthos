@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package test
 
 import (
@@ -5,9 +7,9 @@ import (
 	"fmt"
 	"io/fs"
 
-	iprocessor "github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/config/test"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	iprocessor "github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/config/test"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 // CaseFailure encapsulates information about a failed test case.

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package docs
 
 import (
@@ -5,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/benthosdev/benthos/v4/internal/value"
-	"github.com/benthosdev/benthos/v4/public/bloblang"
+	"github.com/redpanda-data/benthos/v4/internal/value"
+	"github.com/redpanda-data/benthos/v4/public/bloblang"
 )
 
 // FieldType represents a field type.
@@ -83,7 +85,7 @@ type FieldSpec struct {
 	// Kind of the field.
 	Kind FieldKind `json:"kind"`
 
-	// Description of the field purpose (in markdown).
+	// Description of the field purpose (in Asciidoc).
 	Description string `json:"description,omitempty"`
 
 	// IsAdvanced is true for optional fields that will not be present in most
@@ -409,6 +411,7 @@ root = if !$options.exists(this.string()%v) {
 	return f
 }
 
+// ScrubValue applies a sensitive information scrubber to a field value.
 func (f FieldSpec) ScrubValue(v any) (any, error) {
 	if f.Scrubber == "" {
 		return v, nil
@@ -431,6 +434,7 @@ func (f FieldSpec) ScrubValue(v any) (any, error) {
 	return res, nil
 }
 
+// GetLintFunc returns the field linter func.
 func (f FieldSpec) GetLintFunc() LintFunc {
 	fn := f.customLintFn
 	if fn == nil && f.Linter != "" {
@@ -680,6 +684,9 @@ type LintConfig struct {
 
 	// Require labels for components.
 	RequireLabels bool
+
+	// Ignore object fields that aren't recognized.
+	IgnoreUnrecognized bool
 }
 
 // NewLintConfig creates a default linting config.
@@ -823,7 +830,7 @@ func (f FieldSpec) needsDefault() bool {
 	return true
 }
 
-func getDefault(pathName string, field FieldSpec) (any, error) {
+func getDefault(pathName string, field FieldSpec) (val any, optional bool, err error) {
 	if field.Default != nil {
 		if len(field.Children) > 0 && field.Kind == KindScalar {
 			if tmp, ok := value.IClone(*field.Default).(map[string]any); ok {
@@ -831,34 +838,41 @@ func getDefault(pathName string, field FieldSpec) (any, error) {
 					if _, exists := tmp[v.Name]; exists {
 						continue
 					}
-					defV, err := getDefault(pathName+"."+v.Name, v)
+					defV, optional, err := getDefault(pathName+"."+v.Name, v)
 					if err == nil {
-						tmp[v.Name] = defV
+						if !optional {
+							tmp[v.Name] = defV
+						}
 					} else if v.needsDefault() {
-						return nil, err
+						return nil, false, err
 					}
 				}
-				return tmp, nil
+				return tmp, false, nil
 			}
 		}
-		return *field.Default, nil
+		return *field.Default, false, nil
 	} else if field.Kind == KindArray {
-		return []any{}, nil
+		return []any{}, false, nil
 	} else if field.Kind == Kind2DArray {
-		return []any{}, nil
+		return []any{}, false, nil
 	} else if field.Kind == KindMap {
-		return map[string]any{}, nil
+		return map[string]any{}, false, nil
 	} else if len(field.Children) > 0 {
 		m := map[string]any{}
 		for _, v := range field.Children {
-			defV, err := getDefault(pathName+"."+v.Name, v)
+			defV, optional, err := getDefault(pathName+"."+v.Name, v)
 			if err == nil {
-				m[v.Name] = defV
+				if !optional {
+					m[v.Name] = defV
+				}
 			} else if v.needsDefault() {
-				return nil, err
+				return nil, false, err
 			}
 		}
-		return m, nil
+		if len(m) == 0 {
+			return m, true, nil
+		}
+		return m, false, nil
 	}
-	return nil, fmt.Errorf("field '%v' is required and was not present in the config", pathName)
+	return nil, false, fmt.Errorf("field '%v' is required and was not present in the config", pathName)
 }

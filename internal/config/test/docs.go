@@ -1,43 +1,23 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package test
 
 import (
-	"bytes"
 	"fmt"
-	"text/template"
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
-
-	_ "embed"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 const fieldTests = "tests"
-
-//go:embed docs.md
-var testDocs string
-
-type testContext struct {
-	Fields []docs.FieldSpecCtx
-}
-
-// DocsMarkdown returns a markdown document for the templates documentation.
-func DocsMarkdown() ([]byte, error) {
-	testDocsTemplate := docs.FieldsTemplate(false) + testDocs
-
-	var buf bytes.Buffer
-	err := template.Must(template.New("tests").Parse(testDocsTemplate)).Execute(&buf, testContext{
-		Fields: docs.FieldObject("", "").WithChildren(ConfigSpec()).FlattenChildrenForDocs(),
-	})
-
-	return buf.Bytes(), err
-}
 
 // ConfigSpec returns a configuration spec for a template.
 func ConfigSpec() docs.FieldSpec {
 	return docs.FieldObject(fieldTests, "A list of one or more unit tests to execute.").Array().WithChildren(caseFields()...).Optional()
 }
 
+// FromAny returns a Case slice from a yaml node or parsed config.
 func FromAny(v any) ([]Case, error) {
 	if t, ok := v.(*yaml.Node); ok {
 		var tmp struct {
@@ -68,6 +48,7 @@ func FromAny(v any) ([]Case, error) {
 	return FromParsed(pConf)
 }
 
+// FromParsed extracts a Case slice from a parsed config.
 func FromParsed(pConf *docs.ParsedConfig) ([]Case, error) {
 	if !pConf.Contains(fieldTests) {
 		return nil, nil

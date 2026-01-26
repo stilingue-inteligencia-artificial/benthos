@@ -1,26 +1,29 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
+	"sync"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func init() {
-	err := service.RegisterBatchOutput(
+	service.MustRegisterBatchOutput(
 		"inproc", service.NewConfigSpec().
 			Stable().
 			Categories("Utility").
 			Description(`
-Sends data directly to Benthos inputs by connecting to a unique ID. This allows you to hook up isolated streams whilst running Benthos in `+"[streams mode](/docs/guides/streams_mode/about)"+`, it is NOT recommended that you connect the inputs of a stream with an output of the same stream, as feedback loops can lead to deadlocks in your message flow.
+Sends data directly to Redpanda Connect inputs by connecting to a unique ID. This allows you to hook up isolated streams whilst running Redpanda Connect in `+"xref:guides:streams_mode/about.adoc[streams mode]"+`, it is NOT recommended that you connect the inputs of a stream with an output of the same stream, as feedback loops can lead to deadlocks in your message flow.
 
 It is possible to connect multiple inputs to the same inproc ID, resulting in messages dispatching in a round-robin fashion to connected inputs. However, only one output can assume an inproc ID, and will replace existing outputs if a collision occurs.`).
 			Field(service.NewStringField("").Default("")),
@@ -39,9 +42,6 @@ It is possible to connect multiple inputs to the same inproc ID, resulting in me
 			out = interop.NewUnwrapInternalOutput(o)
 			return
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 type inprocOutput struct {
@@ -52,7 +52,8 @@ type inprocOutput struct {
 	transactionsOut chan message.Transaction
 	transactionsIn  <-chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 func newInprocOutput(id string, mgr bundle.NewManagement) (output.Streamed, error) {
@@ -101,12 +102,23 @@ func (i *inprocOutput) Consume(ts <-chan message.Transaction) error {
 		return component.ErrAlreadyStarted
 	}
 	i.transactionsIn = ts
-	go i.loop()
 	return nil
 }
 
-func (i *inprocOutput) Connected() bool {
-	return true
+func (i *inprocOutput) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return component.ConnectionTestSucceeded(i.mgr).AsList()
+}
+
+func (i *inprocOutput) ConnectionStatus() component.ConnectionStatuses {
+	return component.ConnectionStatuses{
+		component.ConnectionActive(i.mgr),
+	}
+}
+
+func (i *inprocOutput) TriggerStartConsuming() {
+	i.startOnce.Do(func() {
+		go i.loop()
+	})
 }
 
 func (i *inprocOutput) TriggerCloseNow() {

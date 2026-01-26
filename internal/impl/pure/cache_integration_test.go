@@ -1,9 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"testing"
 
-	"github.com/benthosdev/benthos/v4/public/service/integration"
+	"github.com/redpanda-data/benthos/v4/public/service/integration"
 )
 
 func TestIntegrationMultilevelCache(t *testing.T) {

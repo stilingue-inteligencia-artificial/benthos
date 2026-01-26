@@ -1,10 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"archive/tar"
 	"archive/zip"
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"testing"
@@ -12,8 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func TestArchiveBadAlgo(t *testing.T) {
@@ -51,7 +52,7 @@ path: 'foo-${!meta("path")}'
 		msg = append(msg, p)
 	}
 
-	batches, err := proc.ProcessBatch(context.Background(), msg)
+	batches, err := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	require.Len(t, batches[0], 1)
@@ -107,7 +108,7 @@ format: zip
 		msg = append(msg, p)
 	}
 
-	batches, err := proc.ProcessBatch(context.Background(), msg)
+	batches, err := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	require.Len(t, batches[0], 1)
@@ -159,7 +160,7 @@ format: lines
 		msg = append(msg, p)
 	}
 
-	batches, err := proc.ProcessBatch(context.Background(), msg)
+	batches, err := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	require.Len(t, batches[0], 1)
@@ -199,7 +200,7 @@ format: concatenate
 		msg = append(msg, p)
 	}
 
-	batches, err := proc.ProcessBatch(context.Background(), msg)
+	batches, err := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	require.Len(t, batches[0], 1)
@@ -235,7 +236,7 @@ format: json_array
 		msg = append(msg, p)
 	}
 
-	batches, err := proc.ProcessBatch(context.Background(), msg)
+	batches, err := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, err)
 	require.Len(t, batches, 1)
 	require.Len(t, batches[0], 1)
@@ -258,7 +259,7 @@ format: json_array
 
 	var msg service.MessageBatch
 
-	batches, err := proc.ProcessBatch(context.Background(), msg)
+	batches, err := proc.ProcessBatch(t.Context(), msg)
 	require.NoError(t, err)
 	require.Empty(t, batches)
 }

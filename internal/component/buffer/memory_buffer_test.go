@@ -1,11 +1,13 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package buffer
 
 import (
 	"context"
 	"sync"
 
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 type memoryBuffer struct {

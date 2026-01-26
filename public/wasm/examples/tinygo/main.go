@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 //go:build tinygo
 
 package main
@@ -5,7 +7,7 @@ package main
 import (
 	"bytes"
 
-	"github.com/benthosdev/benthos/v4/public/wasm/tinygo"
+	"github.com/redpanda-data/benthos/v4/public/wasm/tinygo"
 )
 
 // main is required for TinyGo to compile to Wasm.

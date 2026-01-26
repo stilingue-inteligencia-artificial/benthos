@@ -1,8 +1,10 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package processor
 
 import (
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/tracing"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/tracing"
 )
 
 // MarkErr marks a message part as having failed. This includes modifying

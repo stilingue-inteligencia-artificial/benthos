@@ -1,10 +1,12 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 	"time"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 var _ service.Cache = (*noopCacheAdapter)(nil)
@@ -20,16 +22,13 @@ func noopCacheConfig() *service.ConfigSpec {
 }
 
 func init() {
-	err := service.RegisterCache(
+	service.MustRegisterCache(
 		"noop", noopCacheConfig(),
 		func(_ *service.ParsedConfig, mgr *service.Resources) (service.Cache, error) {
 			f := noopMemCache(mgr.Label(), mgr.Logger())
 
 			return f, nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func noopMemCache(label string, logger *service.Logger) *noopCacheAdapter {

@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pipeline_test
 
 import (
@@ -12,9 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/batch"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/pipeline"
+	"github.com/redpanda-data/benthos/v4/internal/batch"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/pipeline"
 )
 
 var errMockProc = errors.New("this is an error from mock processor")
@@ -47,7 +49,7 @@ func (m *mockMsgProcessor) Close(ctx context.Context) error {
 }
 
 func TestProcessorPipeline(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockProc := &mockMsgProcessor{dropChan: make(chan bool)}
@@ -186,7 +188,7 @@ func (m *mockSplitProcessor) Close(ctx context.Context) error {
 }
 
 func TestProcessorMultiMsgs(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockProc := &mockSplitProcessor{}
@@ -264,7 +266,7 @@ func TestProcessorMultiMsgs(t *testing.T) {
 }
 
 func TestProcessorMultiMsgsBatchError(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockProc := &mockSplitProcessor{}
@@ -381,7 +383,7 @@ func (m *mockPhantomProcessor) Close(ctx context.Context) error {
 }
 
 func TestProcessorMultiMsgsBatchUnknownError(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	mockProc := &mockPhantomProcessor{}
@@ -446,7 +448,7 @@ func TestProcessorMultiMsgsBatchUnknownError(t *testing.T) {
 		require.EqualError(t, err, "oh no")
 
 		var batchErr *batch.Error
-		require.False(t, errors.As(err, &batchErr))
+		require.NotErrorAs(t, err, &batchErr)
 	case <-time.After(time.Second):
 		t.Error("Timed out")
 	}

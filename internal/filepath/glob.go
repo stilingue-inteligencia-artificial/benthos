@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package filepath
 
 import (
@@ -58,7 +60,7 @@ func GlobsAndSuperPaths(f fs.FS, paths []string, extensions ...string) ([]string
 }
 
 // hasMeta reports whether path contains any of the magic characters
-// recognized by Match.
+// recognised by Match.
 //
 // Taken from path/filepath/match.go.
 func hasMeta(path string) bool {

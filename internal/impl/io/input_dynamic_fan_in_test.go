@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
@@ -13,16 +15,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/internal/component/input"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/manager/mock"
-	"github.com/benthosdev/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/component/input"
+	"github.com/redpanda-data/benthos/v4/internal/manager/mock"
+	"github.com/redpanda-data/benthos/v4/internal/message"
 )
 
 var _ input.Streamed = &dynamicFanInInput{}
 
 func TestStaticBasicDynamicFanIn(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	nInputs, nMsgs := 10, 1000
@@ -38,11 +39,13 @@ func TestStaticBasicDynamicFanIn(t *testing.T) {
 		Inputs[fmt.Sprintf("testinput%v", i)] = mockInputs[i]
 	}
 
-	fanIn, err := newDynamicFanInInput(Inputs, log.Noop(), nil, nil)
+	fanIn, err := newDynamicFanInInput(mock.NewManager(), Inputs, nil, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
+
+	fanIn.TriggerStartConsuming()
 
 	for i := 0; i < nMsgs; i++ {
 		for j := 0; j < nInputs; j++ {
@@ -80,7 +83,7 @@ func TestStaticBasicDynamicFanIn(t *testing.T) {
 }
 
 func TestBasicDynamicFanIn(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	nMsgs := 1000
@@ -92,13 +95,15 @@ func TestBasicDynamicFanIn(t *testing.T) {
 		TChan: make(chan message.Transaction),
 	}
 
-	fanIn, err := newDynamicFanInInput(nil, log.Noop(), nil, nil)
+	fanIn, err := newDynamicFanInInput(mock.NewManager(), nil, nil, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	fanIn.TriggerStartConsuming()
+
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	defer done()
 
 	if err = fanIn.SetInput(ctx, "foo", inputOne); err != nil {
@@ -188,7 +193,8 @@ func TestStaticDynamicFanInShutdown(t *testing.T) {
 	inputRemovedList := []string{}
 
 	fanIn, err := newDynamicFanInInput(
-		Inputs, log.Noop(),
+		mock.NewManager(),
+		Inputs,
 		func(ctx context.Context, label string) {
 			mapMut.Lock()
 			inputAddedList = append(inputAddedList, label)
@@ -204,6 +210,8 @@ func TestStaticDynamicFanInShutdown(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	fanIn.TriggerStartConsuming()
 
 	for _, mockIn := range mockInputs {
 		select {
@@ -231,7 +239,7 @@ func TestStaticDynamicFanInShutdown(t *testing.T) {
 		}
 	}
 
-	ctx, done := context.WithTimeout(context.Background(), time.Second)
+	ctx, done := context.WithTimeout(t.Context(), time.Second)
 	require.NoError(t, fanIn.WaitForClose(ctx))
 	done()
 
@@ -253,7 +261,7 @@ func TestStaticDynamicFanInShutdown(t *testing.T) {
 }
 
 func TestStaticDynamicFanInAsync(t *testing.T) {
-	tCtx, done := context.WithTimeout(context.Background(), time.Second*5)
+	tCtx, done := context.WithTimeout(t.Context(), time.Second*5)
 	defer done()
 
 	nInputs, nMsgs := 10, 1000
@@ -268,12 +276,14 @@ func TestStaticDynamicFanInAsync(t *testing.T) {
 		Inputs[fmt.Sprintf("testinput%v", i)] = mockInputs[i]
 	}
 
-	fanIn, err := newDynamicFanInInput(Inputs, log.Noop(), nil, nil)
+	fanIn, err := newDynamicFanInInput(mock.NewManager(), Inputs, nil, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer fanIn.TriggerStopConsuming()
+
+	fanIn.TriggerStartConsuming()
 
 	wg := sync.WaitGroup{}
 	wg.Add(nInputs)

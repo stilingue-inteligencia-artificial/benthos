@@ -1,8 +1,11 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package io
 
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -12,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func socketWriterFromConf(t testing.TB, confStr string, bits ...any) *socketWriter {
@@ -28,7 +31,7 @@ func socketWriterFromConf(t testing.TB, confStr string, bits ...any) *socketWrit
 }
 
 func TestSocketBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	tmpDir := t.TempDir()
@@ -51,7 +54,7 @@ address: %v
 	}()
 
 	go func() {
-		if cerr := wtr.Connect(context.Background()); cerr != nil {
+		if cerr := wtr.Connect(t.Context()); cerr != nil {
 			t.Error(cerr)
 		}
 	}()
@@ -71,13 +74,13 @@ address: %v
 		wg.Done()
 	}()
 
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("foo"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("foo"))); err != nil {
 		t.Error(err)
 	}
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("bar\n"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("bar\n"))); err != nil {
 		t.Error(err)
 	}
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("baz"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("baz"))); err != nil {
 		t.Error(err)
 	}
 
@@ -102,7 +105,7 @@ func (w *testOutputWrapPacketConn) Read(p []byte) (n int, err error) {
 }
 
 func TestUDPSocketBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -124,7 +127,7 @@ address: %v
 		}
 	}()
 
-	if cerr := wtr.Connect(context.Background()); cerr != nil {
+	if cerr := wtr.Connect(t.Context()); cerr != nil {
 		t.Fatal(cerr)
 	}
 
@@ -138,13 +141,13 @@ address: %v
 		wg.Done()
 	}()
 
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("foo"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("foo"))); err != nil {
 		t.Error(err)
 	}
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("bar\n"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("bar\n"))); err != nil {
 		t.Error(err)
 	}
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("baz"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("baz"))); err != nil {
 		t.Error(err)
 	}
 
@@ -160,7 +163,7 @@ address: %v
 }
 
 func TestTCPSocketBasic(t *testing.T) {
-	ctx, done := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
 	defer done()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -183,7 +186,7 @@ address: %v
 	}()
 
 	go func() {
-		if cerr := wtr.Connect(context.Background()); cerr != nil {
+		if cerr := wtr.Connect(t.Context()); cerr != nil {
 			t.Error(cerr)
 		}
 	}()
@@ -203,13 +206,86 @@ address: %v
 		wg.Done()
 	}()
 
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("foo"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("foo"))); err != nil {
 		t.Error(err)
 	}
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("bar\n"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("bar\n"))); err != nil {
 		t.Error(err)
 	}
-	if err = wtr.Write(context.Background(), service.NewMessage([]byte("baz"))); err != nil {
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("baz"))); err != nil {
+		t.Error(err)
+	}
+
+	require.NoError(t, wtr.Close(ctx))
+	wg.Wait()
+
+	exp := "foo\nbar\nbaz\n"
+	if act := buf.String(); exp != act {
+		t.Errorf("Wrong result: %v != %v", act, exp)
+	}
+
+	conn.Close()
+}
+
+func TestTCPSocketWithTLS(t *testing.T) {
+	ctx, done := context.WithTimeout(t.Context(), time.Second*30)
+	defer done()
+
+	tlsConfig, err := generateSelfSignedTLSConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
+	if err != nil {
+		if ln, err = net.Listen("tcp6", "[::1]:0"); err != nil {
+			t.Fatalf("failed to listen on a port: %v", err)
+		}
+	}
+	defer ln.Close()
+
+	wtr := socketWriterFromConf(t, `
+network: tcp
+address: %v
+tls:
+  enabled: true
+  skip_cert_verify: true
+`, ln.Addr().String())
+
+	defer func() {
+		if err := wtr.Close(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+
+	go func() {
+		if cerr := wtr.Connect(t.Context()); cerr != nil {
+			t.Error(cerr)
+		}
+	}()
+
+	conn, err := ln.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second * 5))
+		_, _ = buf.ReadFrom(conn)
+		wg.Done()
+	}()
+
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("foo"))); err != nil {
+		t.Error(err)
+	}
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("bar\n"))); err != nil {
+		t.Error(err)
+	}
+	if err = wtr.Write(t.Context(), service.NewMessage([]byte("baz"))); err != nil {
 		t.Error(err)
 	}
 

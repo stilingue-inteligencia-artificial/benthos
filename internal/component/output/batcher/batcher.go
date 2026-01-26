@@ -1,21 +1,24 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package batcher
 
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/Jeffail/shutdown"
 
-	"github.com/benthosdev/benthos/v4/internal/batch/policy"
-	"github.com/benthosdev/benthos/v4/internal/batch/policy/batchconfig"
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component"
-	"github.com/benthosdev/benthos/v4/internal/component/metrics"
-	"github.com/benthosdev/benthos/v4/internal/component/output"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/internal/transaction"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy"
+	"github.com/redpanda-data/benthos/v4/internal/batch/policy/batchconfig"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component"
+	"github.com/redpanda-data/benthos/v4/internal/component/metrics"
+	"github.com/redpanda-data/benthos/v4/internal/component/output"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/internal/transaction"
 )
 
 // Impl wraps an output with a batching policy.
@@ -29,7 +32,8 @@ type Impl struct {
 	messagesIn  <-chan message.Transaction
 	messagesOut chan message.Transaction
 
-	shutSig *shutdown.Signaller
+	startOnce sync.Once
+	shutSig   *shutdown.Signaller
 }
 
 // NewFromConfig creates a new output preceded by a batching mechanism that
@@ -159,10 +163,18 @@ func (m *Impl) loop() {
 	}
 }
 
-// Connected returns a boolean indicating whether this output is currently
-// connected to its target.
-func (m *Impl) Connected() bool {
-	return m.child.Connected()
+// ConnectionTest attempts to establish whether the component is capable of
+// creating a connection. This will potentially require and test network
+// connectivity, but does not require the component to be initialized.
+func (m *Impl) ConnectionTest(ctx context.Context) component.ConnectionTestResults {
+	return m.child.ConnectionTest(ctx)
+}
+
+// ConnectionStatus returns the current status of the given component
+// connection. The result is a slice in order to accommodate higher order
+// components that wrap several others.
+func (m *Impl) ConnectionStatus() component.ConnectionStatuses {
+	return m.child.ConnectionStatus()
 }
 
 // Consume assigns a messages channel for the output to read.
@@ -174,8 +186,15 @@ func (m *Impl) Consume(msgs <-chan message.Transaction) error {
 		return err
 	}
 	m.messagesIn = msgs
-	go m.loop()
 	return nil
+}
+
+// TriggerStartConsuming initiates async connection and consumption.
+func (m *Impl) TriggerStartConsuming() {
+	m.startOnce.Do(func() {
+		go m.loop()
+		m.child.TriggerStartConsuming()
+	})
 }
 
 // TriggerCloseNow shuts down the Batcher and stops processing messages.

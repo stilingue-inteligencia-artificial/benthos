@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package httpserver
 
 import (
@@ -12,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/scrypt"
 
-	"github.com/benthosdev/benthos/v4/internal/docs"
+	"github.com/redpanda-data/benthos/v4/internal/docs"
 )
 
 const (
@@ -64,7 +66,12 @@ func (b BasicAuthConfig) Validate() error {
 		return errors.New("both username and password_hash are required")
 	}
 
-	if !(b.Algorithm == "md5" || b.Algorithm == "sha256" || b.Algorithm == "bcrypt" || b.Algorithm == "scrypt") {
+	if _, exists := map[string]struct{}{
+		"md5":    {},
+		"sha256": {},
+		"bcrypt": {},
+		"scrypt": {},
+	}[b.Algorithm]; !exists {
 		return errors.New("algorithm should be one of md5, sha256, bcrypt, or scrypt")
 	}
 
@@ -122,6 +129,7 @@ func BasicAuthFieldSpec() docs.FieldSpec {
 	).Advanced()
 }
 
+// BasicAuthConfigFromParsed extracts the auth fields from the parsed config and returns a BasicAuth config.
 func BasicAuthConfigFromParsed(pConf *docs.ParsedConfig) (conf BasicAuthConfig, err error) {
 	pConf = pConf.Namespace(fieldBasicAuth)
 	if conf.Enabled, err = pConf.FieldBool(fieldBasicAuthEnabled); err != nil {

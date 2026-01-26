@@ -1,14 +1,16 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
 	"context"
 
-	"github.com/benthosdev/benthos/v4/internal/bundle"
-	"github.com/benthosdev/benthos/v4/internal/component/interop"
-	"github.com/benthosdev/benthos/v4/internal/component/processor"
-	"github.com/benthosdev/benthos/v4/internal/log"
-	"github.com/benthosdev/benthos/v4/internal/message"
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/internal/bundle"
+	"github.com/redpanda-data/benthos/v4/internal/component/interop"
+	"github.com/redpanda-data/benthos/v4/internal/component/processor"
+	"github.com/redpanda-data/benthos/v4/internal/log"
+	"github.com/redpanda-data/benthos/v4/internal/message"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func processorsProcSpec() *service.ConfigSpec {
@@ -16,7 +18,7 @@ func processorsProcSpec() *service.ConfigSpec {
 		Categories("Composition").
 		Stable().
 		Summary(`A processor grouping several sub-processors.`).
-		Description("This processor is useful in situations where you want to collect several processors under a single resource identifier, whether it is for making your configuration easier to read and navigate, or for improving the testability of your configuration. The behaviour of child processors will match exactly the behaviour they would have under any other processors block.").
+		Description("This processor is useful in situations where you want to collect several processors under a single resource identifier, whether it is for making your configuration easier to read and navigate, or for improving the testability of your configuration. The behavior of child processors will match exactly the behavior they would have under any other processors block.").
 		Example(
 			"Grouped Processing",
 			"Imagine we have a collection of processors who cover a specific functionality. We could use this processor to group them together and make it easier to read and mock during testing by giving the whole block a label:",
@@ -36,7 +38,7 @@ pipeline:
 }
 
 func init() {
-	err := service.RegisterBatchProcessor(
+	service.MustRegisterBatchProcessor(
 		"processors", processorsProcSpec(),
 		func(conf *service.ParsedConfig, res *service.Resources) (service.BatchProcessor, error) {
 			mgr := interop.UnwrapManagement(res)
@@ -58,9 +60,6 @@ func init() {
 			p := processor.NewAutoObservedBatchedProcessor("processors", pp, mgr)
 			return interop.NewUnwrapInternalBatchProcessor(p), nil
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func newProcessorProc(children []processor.V1, mgr bundle.NewManagement) (*processorProc, error) {

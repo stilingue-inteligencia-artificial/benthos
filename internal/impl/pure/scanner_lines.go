@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,12 +8,13 @@ import (
 	"context"
 	"io"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 const (
 	slFieldCustomDelimiter = "custom_delimiter"
 	slFieldMaxBufferSize   = "max_buffer_size"
+	slFieldOmitEmpty       = "omit_empty"
 )
 
 func linesScannerSpec() *service.ConfigSpec {
@@ -25,17 +28,17 @@ func linesScannerSpec() *service.ConfigSpec {
 			service.NewIntField(slFieldMaxBufferSize).
 				Description("Set the maximum buffer size for storing line data, this limits the maximum size that a line can be without causing an error.").
 				Default(bufio.MaxScanTokenSize),
+			service.NewBoolField(slFieldOmitEmpty).
+				Description("Omit empty lines.").
+				Default(false),
 		)
 }
 
 func init() {
-	err := service.RegisterBatchScannerCreator("lines", linesScannerSpec(),
+	service.MustRegisterBatchScannerCreator("lines", linesScannerSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchScannerCreator, error) {
 			return linesScannerFromParsed(conf)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func linesScannerFromParsed(conf *service.ParsedConfig) (l *linesScanner, err error) {
@@ -48,12 +51,16 @@ func linesScannerFromParsed(conf *service.ParsedConfig) (l *linesScanner, err er
 	if l.maxScanTokenSize, err = conf.FieldInt(slFieldMaxBufferSize); err != nil {
 		return
 	}
+	if l.omitEmpty, err = conf.FieldBool(slFieldOmitEmpty); err != nil {
+		return
+	}
 	return
 }
 
 type linesScanner struct {
 	maxScanTokenSize int
 	customDelim      string
+	omitEmpty        bool
 }
 
 func (l *linesScanner) Create(rdr io.ReadCloser, aFn service.AckFunc, details *service.ScannerSourceDetails) (service.BatchScanner, error) {
@@ -85,8 +92,9 @@ func (l *linesScanner) Create(rdr io.ReadCloser, aFn service.AckFunc, details *s
 	}
 
 	return service.AutoAggregateBatchScannerAcks(&linesReaderStream{
-		buf: scanner,
-		r:   rdr,
+		buf:       scanner,
+		r:         rdr,
+		omitEmpty: l.omitEmpty,
 	}, aFn), nil
 }
 
@@ -95,13 +103,17 @@ func (l *linesScanner) Close(context.Context) error {
 }
 
 type linesReaderStream struct {
-	buf *bufio.Scanner
-	r   io.ReadCloser
+	buf       *bufio.Scanner
+	r         io.ReadCloser
+	omitEmpty bool
 }
 
 func (l *linesReaderStream) NextBatch(ctx context.Context) (service.MessageBatch, error) {
-	scanned := l.buf.Scan()
-	if scanned {
+	for l.buf.Scan() {
+		if l.omitEmpty && len(l.buf.Bytes()) == 0 {
+			continue
+		}
+
 		bytesCopy := make([]byte, len(l.buf.Bytes()))
 		copy(bytesCopy, l.buf.Bytes())
 		return service.MessageBatch{service.NewMessage(bytesCopy)}, nil

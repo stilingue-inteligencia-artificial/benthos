@@ -1,3 +1,5 @@
+// Copyright 2025 Redpanda Data, Inc.
+
 package pure
 
 import (
@@ -6,7 +8,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/benthosdev/benthos/v4/public/service"
+	"github.com/redpanda-data/benthos/v4/public/service"
 )
 
 func tarScannerSpec() *service.ConfigSpec {
@@ -14,7 +16,7 @@ func tarScannerSpec() *service.ConfigSpec {
 		Stable().
 		Summary("Consume a tar archive file by file.").
 		Description(`
-### Metadata
+== Metadata
 
 This scanner adds the following metadata to each message:
 
@@ -25,13 +27,10 @@ This scanner adds the following metadata to each message:
 }
 
 func init() {
-	err := service.RegisterBatchScannerCreator("tar", tarScannerSpec(),
+	service.MustRegisterBatchScannerCreator("tar", tarScannerSpec(),
 		func(conf *service.ParsedConfig, mgr *service.Resources) (service.BatchScannerCreator, error) {
 			return tarScannerFromParsed(conf)
 		})
-	if err != nil {
-		panic(err)
-	}
 }
 
 func tarScannerFromParsed(conf *service.ParsedConfig) (l *tarScannerCreator, err error) {
